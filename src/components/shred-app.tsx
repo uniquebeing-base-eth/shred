@@ -21,6 +21,15 @@ import { openShredPack } from "@/lib/shred-functions";
 
 type PackKey = "starter" | "mystery" | "alpha" | "legendary";
 type OpeningStep = "confirm" | "opening" | "reveal" | "claimed";
+type OpeningReward = { label: string; value: string; accent: "gold" | "green" | "violet" | "cyan" };
+type OpeningResult = {
+  packKey: PackKey;
+  title: string;
+  rewards: readonly OpeningReward[];
+  claimReady: boolean;
+  claimedAt: null;
+};
+
 
 const navItems: Array<{ key: NavTab; label: string; icon: typeof House }> = [
   { key: "home", label: "Home", icon: House },
@@ -71,13 +80,7 @@ export function ShredApp() {
   const [openingStep, setOpeningStep] = useState<OpeningStep | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [claimed, setClaimed] = useState(false);
-  const [openingResult, setOpeningResult] = useState<null | {
-    packKey: PackKey;
-    title: string;
-    rewards: Array<{ label: string; value: string; accent: "gold" | "green" | "violet" | "cyan" }>;
-    claimReady: boolean;
-    claimedAt: null;
-  }>(null);
+  const [openingResult, setOpeningResult] = useState<OpeningResult | null>(null);
 
   const openPack = useServerFn(openShredPack);
 
