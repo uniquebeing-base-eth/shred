@@ -1,29 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { ShredApp } from "@/components/shred-app";
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Your App" },
-      { name: "description", content: "Replace this with a one-sentence description of your app." },
-      { property: "og:title", content: "Your App" },
-      { property: "og:description", content: "Replace this with a one-sentence description of your app." },
+      { title: "SHRED — Discover and Collect on Celo" },
+      {
+        name: "description",
+        content:
+          "Open Shreds, discover ecosystem projects, collect cards, earn rewards, and grow your collection in a mobile-first game experience.",
+      },
+      { property: "og:title", content: "SHRED — Discover and Collect on Celo" },
+      {
+        property: "og:description",
+        content:
+          "A bright, mobile-first discovery and collection game where players open Shreds, claim rewards, and grow their collection.",
+      },
+      { name: "twitter:title", content: "SHRED — Discover and Collect on Celo" },
+      {
+        name: "twitter:description",
+        content:
+          "Open Shreds, discover projects, collect cards, and claim rewards in a mobile-first game experience.",
+      },
     ],
   }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  return <ShredApp />;
 }
