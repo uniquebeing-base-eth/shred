@@ -109,21 +109,27 @@ export const enterShred = createServerFn({ method: "POST" })
     const userId = session.data.user!.id;
 
     // Ensure profile row exists with the claimed username + MiniPay address.
-    const referralCode = (await import("crypto")).randomBytes(4).toString("hex").toUpperCase();
-    await supabaseAdmin
+    const existingProfile = await supabaseAdmin
       .from("profiles")
-      .upsert(
-        {
-          id: userId,
-          username: data.username,
-          display_name: data.username,
-          username_claimed_at: new Date().toISOString(),
-          username_tx_hash: data.txHash ?? null,
-          minipay_address: data.address,
-          referral_code: referralCode,
-        },
-        { onConflict: "id", ignoreDuplicates: false },
-      );
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const profileFields = {
+      username: data.username,
+      display_name: data.username,
+      username_claimed_at: new Date().toISOString(),
+      username_tx_hash: data.txHash ?? null,
+      minipay_address: data.address,
+    };
+
+    if (existingProfile.data) {
+      await supabaseAdmin.from("profiles").update(profileFields).eq("id", userId);
+    } else {
+      const cryptoMod = await import("crypto");
+      const referralCode = cryptoMod.randomBytes(4).toString("hex").toUpperCase();
+      await supabaseAdmin.from("profiles").insert({ id: userId, referral_code: referralCode, ...profileFields });
+    }
 
     // Ensure a backend-managed Shred wallet exists for this user.
     const existing = await supabaseAdmin
