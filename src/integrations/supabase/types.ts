@@ -14,56 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      campaigns: {
-        Row: {
-          created_at: string
-          description: string | null
-          end_at: string
-          id: string
-          is_featured: boolean
-          name: string
-          project_id: string | null
-          reward_multiplier: number
-          slug: string
-          start_at: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          description?: string | null
-          end_at: string
-          id?: string
-          is_featured?: boolean
-          name: string
-          project_id?: string | null
-          reward_multiplier?: number
-          slug: string
-          start_at: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          description?: string | null
-          end_at?: string
-          id?: string
-          is_featured?: boolean
-          name?: string
-          project_id?: string | null
-          reward_multiplier?: number
-          slug?: string
-          start_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "campaigns_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       cards: {
         Row: {
           artwork_url: string | null
@@ -150,11 +100,15 @@ export type Database = {
           id: string
           level_number: number
           level_title: string
+          minipay_address: string | null
           onboarding_completed: boolean
           points: number
           referral_code: string
           smart_wallet_reference: string | null
           updated_at: string
+          username: string | null
+          username_claimed_at: string | null
+          username_tx_hash: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -164,11 +118,15 @@ export type Database = {
           id: string
           level_number?: number
           level_title?: string
+          minipay_address?: string | null
           onboarding_completed?: boolean
           points?: number
           referral_code: string
           smart_wallet_reference?: string | null
           updated_at?: string
+          username?: string | null
+          username_claimed_at?: string | null
+          username_tx_hash?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -178,11 +136,15 @@ export type Database = {
           id?: string
           level_number?: number
           level_title?: string
+          minipay_address?: string | null
           onboarding_completed?: boolean
           points?: number
           referral_code?: string
           smart_wallet_reference?: string | null
           updated_at?: string
+          username?: string | null
+          username_claimed_at?: string | null
+          username_tx_hash?: string | null
         }
         Relationships: []
       }
@@ -351,6 +313,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_wallets: {
+        Row: {
+          address: string
+          created_at: string
+          encrypted_private_key: string
+          encryption_iv: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          encrypted_private_key: string
+          encryption_iv: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          encrypted_private_key?: string
+          encryption_iv?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {

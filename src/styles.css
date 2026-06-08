@@ -966,3 +966,185 @@
   50% { transform: rotate(6deg) scale(1.03); }
   100% { transform: rotate(-8deg) scale(0.96); }
 }
+
+@layer components {
+  /* Mute toggle */
+  .mute-toggle {
+    position: absolute;
+    top: 0.9rem;
+    right: 0.9rem;
+    z-index: 4;
+    width: 2.2rem;
+    height: 2.2rem;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--background) 65%, transparent);
+    border: 1px solid color-mix(in oklab, var(--foreground) 22%, transparent);
+    color: var(--foreground);
+    backdrop-filter: blur(8px);
+    cursor: pointer;
+  }
+  .mute-toggle:active { transform: scale(0.92); }
+
+  /* Premium pack visuals */
+  .shred-pack-wrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+  .shred-pack-aura {
+    position: absolute;
+    inset: -20% -20% -20% -20%;
+    filter: blur(18px);
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .shred-pack-body {
+    position: relative;
+    width: 88%;
+    height: 92%;
+    border-radius: 1.4rem;
+    overflow: hidden;
+    border: 2px solid color-mix(in oklab, white 28%, transparent);
+    box-shadow:
+      0 22px 40px -12px color-mix(in oklab, black 60%, transparent),
+      inset 0 -10px 18px color-mix(in oklab, black 40%, transparent),
+      inset 0 14px 22px color-mix(in oklab, white 22%, transparent);
+    display: grid;
+    place-items: center;
+    z-index: 1;
+  }
+  .shred-pack-shine {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, transparent 35%, rgba(255,255,255,0.55) 50%, transparent 65%);
+    mix-blend-mode: overlay;
+    transform: translateX(-100%);
+    animation: shredShine 3.6s ease-in-out infinite;
+  }
+  .shred-pack-foil {
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 6px),
+      radial-gradient(circle at 30% 25%, rgba(255,255,255,0.35), transparent 55%);
+    pointer-events: none;
+  }
+  .shred-pack-emblem {
+    width: 55%;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.45));
+    z-index: 2;
+  }
+  .shred-pack-name {
+    position: absolute;
+    bottom: 18%;
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    letter-spacing: 0.15em;
+    color: white;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.45);
+    z-index: 2;
+  }
+  .shred-pack-tier {
+    position: absolute;
+    bottom: 8%;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: color-mix(in oklab, white 80%, transparent);
+    z-index: 2;
+  }
+  .shred-pack-lightning {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 70% 20%, rgba(255,220,120,0.6), transparent 35%),
+      radial-gradient(circle at 30% 80%, rgba(255,180,40,0.55), transparent 40%);
+    mix-blend-mode: screen;
+    animation: shredFlash 1.6s ease-in-out infinite;
+  }
+  @keyframes shredShine {
+    0% { transform: translateX(-110%); }
+    60% { transform: translateX(110%); }
+    100% { transform: translateX(110%); }
+  }
+  @keyframes shredFlash {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+
+  /* Particle field */
+  .particle-field {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: grid;
+    place-items: center;
+    z-index: 3;
+  }
+  .particle {
+    position: absolute;
+    border-radius: 999px;
+    box-shadow: 0 0 12px currentColor;
+    will-change: transform, opacity;
+  }
+
+  /* Pack stages */
+  .pack-hero-stage,
+  .pack-card-stage,
+  .reveal-stage,
+  .hero-pack-mini {
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+  .pack-hero-stage { padding: 0.5rem 0 1rem; }
+  .pack-card-stage { padding: 0.4rem 0; }
+  .reveal-stage { min-height: 1rem; }
+
+  .overlay-text { display: grid; gap: 0.4rem; text-align: center; }
+
+  /* Reward placeholder slot */
+  .reward-tile.reward-placeholder {
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+    color: color-mix(in oklab, var(--foreground) 45%, transparent);
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    display: grid;
+    place-items: center;
+    border-style: dashed;
+  }
+
+  /* Claim modal */
+  .claim-modal { gap: 0.85rem; }
+  .username-input {
+    width: 100%;
+    padding: 0.85rem 1rem;
+    border-radius: 0.9rem;
+    border: 2px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+    background: color-mix(in oklab, var(--background) 70%, transparent);
+    color: var(--foreground);
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    letter-spacing: 0.04em;
+    text-align: center;
+    outline: none;
+  }
+  .username-input:focus { border-color: var(--pack-gold); }
+  .availability {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+  .availability.ok { color: var(--success); }
+  .availability.bad { color: var(--destructive); }
+  .claiming-scene { display: grid; gap: 0.6rem; place-items: center; padding: 1rem 0; }
+  .claiming-scene .claim-logo { width: 5rem; }
+}
+

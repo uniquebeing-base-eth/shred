@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Crown, Gift, House, RefreshCw, Sparkles, UserRound, WalletCards } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Crown, Gift, House, RefreshCw, Sparkles, UserRound, Volume2, VolumeX, WalletCards } from "lucide-react";
 
 import shredLogo from "@/assets/shred-logo.png.asset.json";
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,21 @@ import {
   swapRoutes,
   tokenHoldings,
   type NavTab,
+  type PackOption,
 } from "@/lib/shred-data";
-import { openShredPack } from "@/lib/shred-functions";
+import { openShredPack, enterShred } from "@/lib/shred-functions";
+import { sfx, isMuted, setMuted } from "@/lib/audio";
+import {
+  checkUsername,
+  claimUsernameOnchain,
+  connectWallet,
+  getUsernameForAddress,
+  isMiniPay,
+} from "@/lib/celo";
+import { supabase } from "@/integrations/supabase/client";
+import type { Address } from "viem";
 
-type PackKey = "starter" | "mystery" | "alpha" | "legendary";
+type PackKey = PackOption["key"];
 type OpeningStep = "confirm" | "opening" | "reveal" | "claimed";
 type OpeningReward = { label: string; value: string; accent: "gold" | "green" | "violet" | "cyan" };
 type OpeningResult = {
@@ -29,7 +41,11 @@ type OpeningResult = {
   claimReady: boolean;
   claimedAt: null;
 };
-
+type Session = {
+  username: string;
+  minipay_address: string;
+  shred_wallet_address: string;
+};
 
 const navItems: Array<{ key: NavTab; label: string; icon: typeof House }> = [
   { key: "home", label: "Home", icon: House },
@@ -74,33 +90,82 @@ const rarityToneMap = {
   Mythic: "mythic",
 } as const;
 
+const packGradient: Record<PackOption["accent"], string> = {
+  blue: "linear-gradient(160deg, #5fb6ff 0%, #2a6df4 55%, #0b2675 100%)",
+  violet: "linear-gradient(160deg, #d57bff 0%, #7a3df0 55%, #2b0a6e 100%)",
+  gold: "linear-gradient(160deg, #ffe28a 0%, #f5a623 55%, #6e3b00 100%)",
+  dark: "linear-gradient(160deg, #2a2a35 0%, #0d0d12 50%, #050507 100%)",
+};
+
+const packAura: Record<PackOption["accent"], string> = {
+  blue: "radial-gradient(circle, rgba(122,200,255,0.55), transparent 65%)",
+  violet: "radial-gradient(circle, rgba(196,128,255,0.6), transparent 65%)",
+  gold: "radial-gradient(circle, rgba(255,210,120,0.65), transparent 65%)",
+  dark: "radial-gradient(circle, rgba(255,210,80,0.45), transparent 65%)",
+};
+
 export function ShredApp() {
   const [activeTab, setActiveTab] = useState<NavTab>("home");
   const [selectedPack, setSelectedPack] = useState<PackKey | null>("starter");
   const [openingStep, setOpeningStep] = useState<OpeningStep | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [claimed, setClaimed] = useState(false);
   const [openingResult, setOpeningResult] = useState<OpeningResult | null>(null);
+  const [revealCount, setRevealCount] = useState(0);
+  const [session, setSession] = useState<Session | null>(null);
+  const [muted, setMutedState] = useState(false);
 
   const openPack = useServerFn(openShredPack);
 
+  useEffect(() => {
+    setMutedState(isMuted());
+  }, []);
+
   const currentPack = useMemo(
-    () => packOptions.find((pack) => pack.key === (selectedPack ?? "starter")) ?? packOptions[0],
+    () => packOptions.find((p) => p.key === (selectedPack ?? "starter")) ?? packOptions[0],
     [selectedPack],
   );
 
   const handleOpenPack = async () => {
     if (!selectedPack) return;
-    setClaimed(false);
+    sfx.rip();
     setOpeningStep("opening");
+    setRevealCount(0);
     const result = await openPack({ data: { packKey: selectedPack } });
     setOpeningResult(result);
-    window.setTimeout(() => setOpeningStep("reveal"), 1450);
+    window.setTimeout(() => {
+      sfx.explosion();
+      setOpeningStep("reveal");
+    }, 1500);
   };
 
+  // Sequential reward reveal with sound
+  useEffect(() => {
+    if (openingStep !== "reveal" || !openingResult) return;
+    if (revealCount >= openingResult.rewards.length) return;
+    const t = window.setTimeout(() => {
+      const r = openingResult.rewards[revealCount];
+      if (r.label.toLowerCase().includes("legendary") || r.label.toLowerCase().includes("epic") || r.label.toLowerCase().includes("rare")) {
+        sfx.rareReveal();
+      } else if (r.label === "CELO" || r.label === "Points") {
+        sfx.coin();
+      } else {
+        sfx.reveal();
+      }
+      setRevealCount((c) => c + 1);
+    }, revealCount === 0 ? 350 : 520);
+    return () => window.clearTimeout(t);
+  }, [openingStep, openingResult, revealCount]);
+
   const handleClaim = () => {
-    setClaimed(true);
+    sfx.chest();
     setOpeningStep("claimed");
+    window.setTimeout(() => sfx.success(), 400);
+  };
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    setMutedState(next);
+    if (!next) sfx.click();
   };
 
   return (
@@ -109,22 +174,12 @@ export function ShredApp() {
         <div className="screen-glow" aria-hidden="true" />
         <div className="screen-stars" aria-hidden="true" />
 
-        {!authReady ? (
-          <section className="welcome-panel">
-            <img src={shredLogo.url} alt="Shred logo" className="welcome-logo" />
-            <div className="welcome-copy">
-              <p className="eyebrow">MiniPay-ready onboarding</p>
-              <h1>Welcome to Shred</h1>
-              <p>
-                Your starter Shred is ready. Open packs, discover ecosystem projects, collect cards,
-                and claim rewards without thinking about the infrastructure underneath.
-              </p>
-            </div>
-            <Button variant="arcade" size="arcade" onClick={() => setAuthReady(true)}>
-              Open Shred
-            </Button>
-            <p className="welcome-note">MiniPay sign-in placeholder for this MVP foundation.</p>
-          </section>
+        <button type="button" className="mute-toggle" onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}>
+          {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+        </button>
+
+        {!session ? (
+          <WelcomeScreen onEntered={setSession} />
         ) : (
           <>
             <header className="top-bar">
@@ -134,7 +189,7 @@ export function ShredApp() {
                 </div>
                 <div>
                   <p className="level-badge">Level 12</p>
-                  <h2>Collector</h2>
+                  <h2>{session.username}</h2>
                   <div className="xp-meter">
                     <span className="xp-fill" style={{ width: "82%" }} />
                     <strong>2,450 / 3,000 XP</strong>
@@ -148,17 +203,31 @@ export function ShredApp() {
             </header>
 
             <section className="content-area">
-              {activeTab === "home" && <HomeTab onOpenStarter={() => { setSelectedPack("starter"); setOpeningStep("confirm"); }} />}
+              {activeTab === "home" && (
+                <HomeTab
+                  onOpenStarter={() => {
+                    sfx.packSelect();
+                    setSelectedPack("starter");
+                    setOpeningStep("confirm");
+                  }}
+                />
+              )}
               {activeTab === "shreds" && (
                 <ShredsTab
                   selectedPack={selectedPack}
-                  onSelectPack={(pack) => setSelectedPack(pack)}
-                  onOpen={() => setOpeningStep("confirm")}
+                  onSelectPack={(pack) => {
+                    sfx.packSelect();
+                    setSelectedPack(pack);
+                  }}
+                  onOpen={() => {
+                    sfx.click();
+                    setOpeningStep("confirm");
+                  }}
                 />
               )}
               {activeTab === "collection" && <CollectionTab />}
               {activeTab === "swap" && <SwapTab />}
-              {activeTab === "profile" && <ProfileTab />}
+              {activeTab === "profile" && <ProfileTab session={session} />}
             </section>
 
             <nav className="bottom-nav" aria-label="Primary">
@@ -170,7 +239,10 @@ export function ShredApp() {
                     key={item.key}
                     type="button"
                     className={cn("nav-button", isActive && "nav-button-active")}
-                    onClick={() => setActiveTab(item.key)}
+                    onClick={() => {
+                      sfx.navTap();
+                      setActiveTab(item.key);
+                    }}
                   >
                     <span className={cn("nav-icon-wrap", isActive && "nav-icon-wrap-active")}>
                       <Icon className="nav-icon" />
@@ -181,89 +253,49 @@ export function ShredApp() {
               })}
             </nav>
 
-            {openingStep ? (
-              <div className="overlay-backdrop">
-                <div className="overlay-card">
-                  {openingStep === "confirm" && (
-                    <>
-                      <div className={cn("pack-hero", accentClassMap[currentPack.accent])}>
-                        <div className="pack-burst" aria-hidden="true" />
-                        <p className="eyebrow">{currentPack.rarityHint}</p>
-                        <h3>{currentPack.name}</h3>
-                        <p>{currentPack.blurb}</p>
-                        <div className="pack-bag">SHRED</div>
-                      </div>
-                      <div className="overlay-actions">
-                        <div>
-                          <p className="overlay-label">Cost</p>
-                          <strong>{currentPack.price}</strong>
-                        </div>
-                        <Button variant="arcade" size="arcade" onClick={handleOpenPack}>
-                          Open Pack
-                        </Button>
-                      </div>
-                      <button type="button" className="ghost-close" onClick={() => setOpeningStep(null)}>
-                        Not now
-                      </button>
-                    </>
-                  )}
-
-                  {openingStep === "opening" && (
-                    <div className="shredding-scene">
-                      <p className="eyebrow">Shredding!</p>
-                      <div className={cn("shredding-pack", accentClassMap[currentPack.accent])}>SHRED</div>
-                      <p>The pack is cracking open and your rewards are being generated.</p>
-                    </div>
-                  )}
-
-                  {openingStep === "reveal" && openingResult && (
-                    <>
-                      <div className="reveal-header">
-                        <p className="eyebrow">{openingResult.packKey.toUpperCase()} REWARDS</p>
-                        <h3>{openingResult.title}</h3>
-                      </div>
-                      <div className="reward-grid">
-                        {openingResult.rewards.map((reward) => (
-                          <div key={reward.label} className={cn("reward-tile", accentClassMap[reward.accent], textClassMap[reward.accent])}>
-                            <span className="reward-value">{reward.value}</span>
-                            <strong>{reward.label}</strong>
-                          </div>
-                        ))}
-                      </div>
-                      <Button variant="gold" size="arcade" onClick={handleClaim}>
-                        Claim Rewards
-                      </Button>
-                    </>
-                  )}
-
-                  {openingStep === "claimed" && openingResult && (
-                    <div className="claim-scene">
-                      <div className="claim-badge">Success!</div>
-                      <img src={shredLogo.url} alt="Shred logo badge" className="claim-logo" />
-                      <p>Your rewards have been added to your collection and are ready for swap or withdrawal flows.</p>
-                      <div className="claim-summary">
-                        {openingResult.rewards.map((reward) => (
-                          <div key={reward.label} className="claim-row">
-                            <span>{reward.label}</span>
-                            <strong>{reward.value}</strong>
-                          </div>
-                        ))}
-                      </div>
-                      <Button
-                        variant="arcade"
-                        size="arcade"
-                        onClick={() => {
+            <AnimatePresence>
+              {openingStep ? (
+                <motion.div
+                  className="overlay-backdrop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <motion.div
+                    className="overlay-card"
+                    initial={{ scale: 0.9, y: 30 }}
+                    animate={openingStep === "opening"
+                      ? { scale: 1, y: 0, x: [0, -6, 6, -4, 4, 0], rotate: [0, -1, 1, -0.6, 0.6, 0] }
+                      : { scale: 1, y: 0 }}
+                    transition={openingStep === "opening" ? { duration: 1.5, repeat: 0 } : { type: "spring", stiffness: 220, damping: 22 }}
+                    exit={{ scale: 0.92, opacity: 0 }}
+                  >
+                    {openingStep === "confirm" && (
+                      <ConfirmPanel pack={currentPack} onOpen={handleOpenPack} onClose={() => setOpeningStep(null)} />
+                    )}
+                    {openingStep === "opening" && <OpeningScene pack={currentPack} />}
+                    {openingStep === "reveal" && openingResult && (
+                      <RevealScene
+                        pack={currentPack}
+                        result={openingResult}
+                        revealedCount={revealCount}
+                        onClaim={handleClaim}
+                      />
+                    )}
+                    {openingStep === "claimed" && openingResult && (
+                      <ClaimedScene
+                        result={openingResult}
+                        onClose={() => {
+                          sfx.click();
+                          setActiveTab("collection");
                           setOpeningStep(null);
-                          setClaimed(false);
                         }}
-                      >
-                        View Collection
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
+                      />
+                    )}
+                  </motion.div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </>
         )}
       </div>
@@ -271,52 +303,386 @@ export function ShredApp() {
   );
 }
 
+/* ----------------------- Welcome / Username claim ---------------------- */
+
+function WelcomeScreen({ onEntered }: { onEntered: (s: Session) => void }) {
+  const [step, setStep] = useState<"idle" | "claim">("idle");
+  return (
+    <section className="welcome-panel">
+      <motion.img
+        src={shredLogo.url}
+        alt="Shred logo"
+        className="welcome-logo"
+        initial={{ scale: 0.7, opacity: 0, y: 10 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 180, damping: 14 }}
+      />
+      <div className="welcome-copy">
+        <h1>Welcome to Shred</h1>
+        <p>Claim your name. Open packs. Collect the Celo ecosystem.</p>
+      </div>
+      <Button
+        variant="arcade"
+        size="arcade"
+        onClick={() => {
+          sfx.click();
+          setStep("claim");
+        }}
+      >
+        Claim Username
+      </Button>
+      {step === "claim" ? <ClaimUsernameModal onClose={() => setStep("idle")} onEntered={onEntered} /> : null}
+    </section>
+  );
+}
+
+function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) => void; onClose: () => void }) {
+  const enter = useServerFn(enterShred);
+  const [stage, setStage] = useState<"connect" | "name" | "claiming" | "entering" | "done">("connect");
+  const [address, setAddress] = useState<Address | null>(null);
+  const [existing, setExisting] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState("");
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const checkRef = useRef<number | null>(null);
+
+  const startConnect = async () => {
+    setError(null);
+    try {
+      const addr = await connectWallet();
+      setAddress(addr);
+      const already = await getUsernameForAddress(addr);
+      if (already) {
+        setExisting(already);
+        setName(already);
+        setStage("entering");
+        await enterFlow(addr, already);
+      } else {
+        setStage("name");
+      }
+    } catch (e) {
+      sfx.error();
+      setError(e instanceof Error ? e.message : "Could not connect wallet");
+    }
+  };
+
+  const enterFlow = async (addr: Address, username: string, txHash?: string) => {
+    setStage("entering");
+    setStatusText("Setting up your collection wallet…");
+    const res = await enter({ data: { address: addr, username, txHash } });
+    await supabase.auth.setSession({ access_token: res.access_token, refresh_token: res.refresh_token });
+    sfx.success();
+    setStage("done");
+    onEntered({ username: res.username, minipay_address: res.minipay_address, shred_wallet_address: res.shred_wallet_address });
+  };
+
+  // Debounced availability check
+  useEffect(() => {
+    if (stage !== "name") return;
+    setAvailable(null);
+    setError(null);
+    if (!name) return;
+    if (checkRef.current) window.clearTimeout(checkRef.current);
+    checkRef.current = window.setTimeout(async () => {
+      const r = await checkUsername(name);
+      setAvailable(r.available);
+      if (!r.available) setError(r.reason ?? null);
+    }, 380);
+    return () => {
+      if (checkRef.current) window.clearTimeout(checkRef.current);
+    };
+  }, [name, stage]);
+
+  const submitClaim = async () => {
+    if (!address || !name || available !== true) return;
+    sfx.click();
+    setStage("claiming");
+    setError(null);
+    setStatusText("Confirm in your wallet…");
+    try {
+      const tx = await claimUsernameOnchain(name, address);
+      setStatusText("Waiting for confirmation…");
+      await enterFlow(address, name, tx);
+    } catch (e) {
+      sfx.error();
+      setError(e instanceof Error ? e.message : "Claim failed");
+      setStage("name");
+    }
+  };
+
+  return (
+    <motion.div
+      className="overlay-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="overlay-card claim-modal"
+        initial={{ scale: 0.92, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 220, damping: 22 }}
+      >
+        <p className="eyebrow">{stage === "connect" ? "Step 1" : stage === "name" ? "Step 2" : "Almost there"}</p>
+        {stage === "connect" && (
+          <>
+            <h3>Connect to Shred</h3>
+            <p>{isMiniPay() ? "We detected MiniPay. Connect to continue." : "Open Shred inside MiniPay for the best experience."}</p>
+            <Button variant="arcade" size="arcade" onClick={startConnect}>Connect Wallet</Button>
+          </>
+        )}
+        {stage === "name" && (
+          <>
+            <h3>Pick your name</h3>
+            <p>This becomes your onchain Shred identity. 3–20 characters.</p>
+            <input
+              className="username-input"
+              value={name}
+              onChange={(e) => setName(e.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 20))}
+              placeholder="yourname"
+              autoFocus
+            />
+            <div className={cn("availability", available === true && "ok", available === false && "bad")}>
+              {!name ? "Letters, numbers, underscore." : available === null ? "Checking…" : available ? "Available!" : (error ?? "Taken")}
+            </div>
+            <Button variant="gold" size="arcade" disabled={available !== true} onClick={submitClaim}>
+              Claim Onchain
+            </Button>
+          </>
+        )}
+        {(stage === "claiming" || stage === "entering") && (
+          <div className="claiming-scene">
+            <motion.img
+              src={shredLogo.url}
+              alt=""
+              className="claim-logo"
+              animate={{ rotate: [0, 8, -8, 0], scale: [1, 1.08, 1] }}
+              transition={{ duration: 1.4, repeat: Infinity }}
+            />
+            <h3>{stage === "claiming" ? "Claiming on Celo…" : "Welcome aboard"}</h3>
+            <p>{statusText}</p>
+          </div>
+        )}
+        {stage === "done" && existing && <p>Welcome back, {existing}.</p>}
+        {error && stage !== "name" ? <p className="welcome-note">{error}</p> : null}
+        {stage === "connect" || stage === "name" ? (
+          <button type="button" className="ghost-close" onClick={onClose}>Not now</button>
+        ) : null}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ----------------------- Pack visuals ---------------------- */
+
+function ShredPack({ pack, size = "lg" }: { pack: PackOption; size?: "sm" | "md" | "lg" }) {
+  const sizes = { sm: 96, md: 140, lg: 200 } as const;
+  const w = sizes[size];
+  return (
+    <div className="shred-pack-wrap" style={{ width: w, height: Math.round(w * 1.32) }}>
+      <div className="shred-pack-aura" style={{ background: packAura[pack.accent] }} aria-hidden="true" />
+      <motion.div
+        className="shred-pack-body"
+        style={{ background: packGradient[pack.accent] }}
+        animate={{ y: [0, -6, 0] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <div className="shred-pack-shine" aria-hidden="true" />
+        <div className="shred-pack-foil" aria-hidden="true" />
+        <img src={shredLogo.url} alt="" className="shred-pack-emblem" />
+        <span className="shred-pack-name">SHRED</span>
+        <span className="shred-pack-tier">{pack.tagline}</span>
+        {pack.accent === "dark" ? <div className="shred-pack-lightning" aria-hidden="true" /> : null}
+      </motion.div>
+    </div>
+  );
+}
+
+function ParticleBurst({ count = 28 }: { count?: number }) {
+  const particles = useMemo(
+    () =>
+      Array.from({ length: count }, (_, i) => ({
+        id: i,
+        angle: (i / count) * Math.PI * 2 + Math.random() * 0.4,
+        distance: 90 + Math.random() * 80,
+        size: 6 + Math.random() * 10,
+        delay: Math.random() * 0.2,
+        hue: ["#ffd166", "#ef476f", "#06d6a0", "#118ab2", "#c77dff"][i % 5],
+      })),
+    [count],
+  );
+  return (
+    <div className="particle-field" aria-hidden="true">
+      {particles.map((p) => (
+        <motion.span
+          key={p.id}
+          className="particle"
+          style={{ width: p.size, height: p.size, background: p.hue }}
+          initial={{ x: 0, y: 0, opacity: 1, scale: 0.4 }}
+          animate={{
+            x: Math.cos(p.angle) * p.distance,
+            y: Math.sin(p.angle) * p.distance,
+            opacity: 0,
+            scale: 1.2,
+          }}
+          transition={{ duration: 1.1, delay: p.delay, ease: "easeOut" }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ----------------------- Pack-open overlay scenes ---------------------- */
+
+function ConfirmPanel({ pack, onOpen, onClose }: { pack: PackOption; onOpen: () => void; onClose: () => void }) {
+  return (
+    <>
+      <div className="pack-hero-stage">
+        <ShredPack pack={pack} size="lg" />
+      </div>
+      <div className="overlay-text">
+        <p className="eyebrow">{pack.rarityHint}</p>
+        <h3>{pack.name}</h3>
+        <p>{pack.blurb}</p>
+      </div>
+      <div className="overlay-actions">
+        <div>
+          <p className="overlay-label">Cost</p>
+          <strong>{pack.price}</strong>
+        </div>
+        <Button variant="arcade" size="arcade" onClick={onOpen}>Open Pack</Button>
+      </div>
+      <button type="button" className="ghost-close" onClick={onClose}>Not now</button>
+    </>
+  );
+}
+
+function OpeningScene({ pack }: { pack: PackOption }) {
+  return (
+    <div className="opening-scene">
+      <p className="eyebrow">Shredding!</p>
+      <div className="pack-hero-stage">
+        <motion.div
+          animate={{ rotate: [0, -8, 8, -10, 10, 0], scale: [1, 1.05, 0.96, 1.08, 0.95, 1] }}
+          transition={{ duration: 1.5 }}
+        >
+          <ShredPack pack={pack} size="lg" />
+        </motion.div>
+        <ParticleBurst count={20} />
+      </div>
+      <p>Cracking your pack open…</p>
+    </div>
+  );
+}
+
+function RevealScene({
+  pack,
+  result,
+  revealedCount,
+  onClaim,
+}: {
+  pack: PackOption;
+  result: OpeningResult;
+  revealedCount: number;
+  onClaim: () => void;
+}) {
+  const allRevealed = revealedCount >= result.rewards.length;
+  return (
+    <>
+      <div className="reveal-header">
+        <p className="eyebrow">{pack.name} · Rewards</p>
+        <h3>{result.title}</h3>
+      </div>
+      <div className="reveal-stage">
+        <ParticleBurst count={14} />
+      </div>
+      <div className="reward-grid">
+        {result.rewards.map((reward, idx) => (
+          <AnimatePresence key={reward.label} mode="popLayout">
+            {idx < revealedCount ? (
+              <motion.div
+                className={cn("reward-tile", accentClassMap[reward.accent], textClassMap[reward.accent])}
+                initial={{ scale: 0.4, rotate: -10, opacity: 0, y: 30 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 260, damping: 18 }}
+              >
+                <span className="reward-value">{reward.value}</span>
+                <strong>{reward.label}</strong>
+              </motion.div>
+            ) : (
+              <div key={`ph-${idx}`} className="reward-tile reward-placeholder">?</div>
+            )}
+          </AnimatePresence>
+        ))}
+      </div>
+      <Button variant="gold" size="arcade" disabled={!allRevealed} onClick={onClaim}>
+        {allRevealed ? "Claim Rewards" : "Revealing…"}
+      </Button>
+    </>
+  );
+}
+
+function ClaimedScene({ result, onClose }: { result: OpeningResult; onClose: () => void }) {
+  return (
+    <div className="claim-scene">
+      <ParticleBurst count={28} />
+      <motion.div className="claim-badge" initial={{ scale: 0.6 }} animate={{ scale: [0.6, 1.15, 1] }} transition={{ duration: 0.6 }}>
+        Success!
+      </motion.div>
+      <motion.img
+        src={shredLogo.url}
+        alt="Shred logo badge"
+        className="claim-logo"
+        animate={{ rotate: [0, -6, 6, 0], scale: [1, 1.05, 1] }}
+        transition={{ duration: 1.4, repeat: Infinity }}
+      />
+      <p>Added to your collection. Cash out anytime from the Swap tab.</p>
+      <div className="claim-summary">
+        {result.rewards.map((reward) => (
+          <div key={reward.label} className="claim-row">
+            <span>{reward.label}</span>
+            <strong>{reward.value}</strong>
+          </div>
+        ))}
+      </div>
+      <Button variant="arcade" size="arcade" onClick={onClose}>View Collection</Button>
+    </div>
+  );
+}
+
+/* ----------------------- Tabs ---------------------- */
+
 function HomeTab({ onOpenStarter }: { onOpenStarter: () => void }) {
   return (
     <div className="tab-stack">
       <section className="hero-card game-sky">
         <div className="hero-copy">
           <p className="eyebrow">Daily Shred Ready</p>
-          <h1>Open today’s free pack and discover what drops next.</h1>
-          <p>
-            Small CELO rewards, ecosystem tokens, collectible cards, and points every 24 hours.
-          </p>
-          <Button variant="arcade" size="arcade" onClick={onOpenStarter}>
-            Shred Now
-          </Button>
+          <h1>Today's free pack is waiting.</h1>
+          <p>Discover ecosystem rewards every 24 hours.</p>
+          <Button variant="arcade" size="arcade" onClick={onOpenStarter}>Shred Now</Button>
         </div>
-        <div className="hero-pack art-lift">SHRED</div>
+        <div className="hero-pack-mini">
+          <ShredPack pack={packOptions[0]} size="sm" />
+        </div>
       </section>
 
       <section className="info-grid three-up">
-        <MetricCard label="Collection Value" value="$24.21" tone="green" subtext="Across cards and tokens" />
-        <MetricCard label="Points" value="4,350" tone="gold" subtext="Level 12 Collector" />
-        <MetricCard label="Completion" value="57%" tone="violet" subtext="7 rare · 2 legendary" />
-      </section>
-
-      <section className="feature-card purple-flare">
-        <div>
-          <p className="section-chip">Featured Project</p>
-          <h2>MENTO</h2>
-          <p>The stable money standard for Celo, featured today with boosted discovery rewards.</p>
-        </div>
-        <Button variant="gold" size="arcadeSm">Discover</Button>
+        <MetricCard label="Value" value="$24.21" tone="green" subtext="Cards + tokens" />
+        <MetricCard label="Points" value="4,350" tone="gold" subtext="Level 12" />
+        <MetricCard label="Complete" value="57%" tone="violet" subtext="7 rare · 2 legendary" />
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Daily Quests</h2>
-          <span>3/5</span>
-        </div>
+        <div className="panel-heading"><h2>Daily Quests</h2><span>3/5</span></div>
         <div className="quest-list">
           {dailyQuests.map((quest) => (
             <div key={quest.title} className="quest-row">
               <div className="quest-icon">{quest.icon}</div>
               <div className="quest-copy">
                 <strong>{quest.title}</strong>
-                <div className="progress-bar">
-                  <span style={{ width: `${quest.progress * 100}%` }} />
-                </div>
+                <div className="progress-bar"><span style={{ width: `${quest.progress * 100}%` }} /></div>
               </div>
               <span className="quest-reward">{quest.reward}</span>
             </div>
@@ -325,10 +691,7 @@ function HomeTab({ onOpenStarter }: { onOpenStarter: () => void }) {
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Latest Discovery</h2>
-          <Sparkles className="heading-icon" />
-        </div>
+        <div className="panel-heading"><h2>Latest Discovery</h2><Sparkles className="heading-icon" /></div>
         <div className="reward-grid compact-grid">
           {homeRewards.map((reward) => (
             <div key={reward.label} className={cn("reward-tile compact", accentClassMap[reward.accent], textClassMap[reward.accent])}>
@@ -356,12 +719,8 @@ function ShredsTab({
       <section className="feature-card deep-space">
         <div>
           <p className="section-chip">Shreds</p>
-          <h1>Open packs. Discover projects. Collect rewards.</h1>
-          <p>No empty packs. Every Shred moves your collection forward.</p>
-        </div>
-        <div className="mini-stat-card">
-          <span>My Packs</span>
-          <strong>12</strong>
+          <h1>Open packs. Collect everything.</h1>
+          <p>Every Shred moves your collection forward.</p>
         </div>
       </section>
 
@@ -369,13 +728,17 @@ function ShredsTab({
         {packOptions.map((pack) => {
           const isSelected = selectedPack === pack.key;
           return (
-            <button
+            <motion.button
               type="button"
               key={pack.key}
-              className={cn("pack-card", accentClassMap[pack.accent], ringClassMap[pack.accent], isSelected && "pack-card-selected")}
-              onClick={() => onSelectPack(pack.key as PackKey)}
+              whileTap={{ scale: 0.96 }}
+              onMouseEnter={() => sfx.hover()}
+              className={cn("pack-card", ringClassMap[pack.accent], isSelected && "pack-card-selected")}
+              onClick={() => onSelectPack(pack.key)}
             >
-              <div className="pack-bag large">SHRED</div>
+              <div className="pack-card-stage">
+                <ShredPack pack={pack} size="md" />
+              </div>
               <div className="pack-card-copy">
                 <h3>{pack.name}</h3>
                 <p>{pack.blurb}</p>
@@ -384,28 +747,17 @@ function ShredsTab({
                 <strong>{pack.price}</strong>
                 <span>{pack.rarityHint}</span>
               </div>
-            </button>
+            </motion.button>
           );
         })}
       </section>
 
       <section className="feature-card game-sky compact-banner">
         <div>
-          <p className="section-chip">Daily Shred</p>
-          <h2>Starter Shred refreshes every 24 hours.</h2>
+          <p className="section-chip">Ready?</p>
+          <h2>Open the selected pack.</h2>
         </div>
-        <Button variant="arcade" size="arcade" onClick={onOpen}>
-          Claim When Ready
-        </Button>
-      </section>
-
-      <section className="feature-card purple-flare compact-banner">
-        <div>
-          <p className="section-chip">Live Event</p>
-          <h2>MENTO Discovery Week</h2>
-          <p>3x MENTO reward boost with exclusive card pulls and bonus quests.</p>
-        </div>
-        <div className="event-pill">3x Drop Rate</div>
+        <Button variant="gold" size="arcade" onClick={onOpen}>Open</Button>
       </section>
     </div>
   );
@@ -420,10 +772,7 @@ function CollectionTab() {
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Tokens</h2>
-          <span>Collection</span>
-        </div>
+        <div className="panel-heading"><h2>Tokens</h2><span>Inventory</span></div>
         <div className="token-list">
           {tokenHoldings.map((token) => (
             <div key={token.symbol} className="token-row">
@@ -439,10 +788,7 @@ function CollectionTab() {
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Cards</h2>
-          <span>Collection</span>
-        </div>
+        <div className="panel-heading"><h2>Cards</h2><span>Inventory</span></div>
         <div className="collection-grid">
           {collectionCards.map((card) => (
             <div key={`${card.name}-${card.rarity}`} className={cn("collection-card", accentClassMap[card.accent])}>
@@ -455,16 +801,13 @@ function CollectionTab() {
       </section>
 
       <section className="panel-card world-card">
-        <div className="panel-heading">
-          <h2>Celo World</h2>
-          <Crown className="heading-icon" />
-        </div>
+        <div className="panel-heading"><h2>Celo World</h2><Crown className="heading-icon" /></div>
         <div className="world-grid">
           {[
             { label: "Payments", value: "70%", tone: "cyan" },
             { label: "DeFi", value: "40%", tone: "violet" },
             { label: "Gaming", value: "90%", tone: "green" },
-            { label: "Infrastructure", value: "25%", tone: "gold" },
+            { label: "Infra", value: "25%", tone: "gold" },
           ].map((item) => (
             <div key={item.label} className={cn("world-node", accentClassMap[item.tone as keyof typeof accentClassMap])}>
               <strong>{item.label}</strong>
@@ -483,26 +826,19 @@ function SwapTab() {
       <section className="feature-card deep-space">
         <div>
           <p className="section-chip">Swap</p>
-          <h1>Move rewards into CELO or cUSD without exposing the rails.</h1>
-          <p>Estimated output, route, fees, and price impact stay visible while the infrastructure stays hidden.</p>
+          <h1>Cash out anytime.</h1>
+          <p>Convert ecosystem tokens to CELO or cUSD and send to MiniPay.</p>
         </div>
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Available Routes</h2>
-          <span>Live preview</span>
-        </div>
+        <div className="panel-heading"><h2>Available Routes</h2><span>Live</span></div>
         <div className="swap-list">
           {swapRoutes.map((route) => (
             <div key={`${route.from}-${route.to}`} className="swap-row">
               <div>
-                <strong>
-                  {route.from} → {route.to}
-                </strong>
-                <p>
-                  Fee {route.fee} · Price impact {route.impact}
-                </p>
+                <strong>{route.from} → {route.to}</strong>
+                <p>Fee {route.fee} · Price impact {route.impact}</p>
               </div>
               <span>{route.output}</span>
             </div>
@@ -512,24 +848,24 @@ function SwapTab() {
 
       <section className="feature-card game-sky compact-banner">
         <div>
-          <p className="section-chip">Withdraw</p>
-          <h2>Supported assets can be sent straight to MiniPay.</h2>
-          <p>Unsupported assets can be converted automatically before send-out.</p>
+          <p className="section-chip">Cash Out</p>
+          <h2>Send to MiniPay.</h2>
+          <p>Supported assets ship straight. Others convert first.</p>
         </div>
-        <Button variant="gold" size="arcadeSm">Prepare Withdraw</Button>
+        <Button variant="gold" size="arcadeSm" onClick={() => sfx.click()}>Prepare</Button>
       </section>
     </div>
   );
 }
 
-function ProfileTab() {
+function ProfileTab({ session }: { session: Session }) {
   return (
     <div className="tab-stack">
       <section className="feature-card purple-flare">
         <div>
           <p className="section-chip">Profile</p>
-          <h1>Level 12 Collector</h1>
-          <p>Track referrals, progression, discoveries, and leaderboard standing.</p>
+          <h1>{session.username}</h1>
+          <p>Level 12 · Collector tier</p>
         </div>
         <img src={shredLogo.url} alt="Shred profile badge" className="profile-badge" />
       </section>
@@ -541,10 +877,7 @@ function ProfileTab() {
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Leaderboard</h2>
-          <span>Monthly reset</span>
-        </div>
+        <div className="panel-heading"><h2>Leaderboard</h2><span>Monthly</span></div>
         <div className="leaderboard-list">
           {leaderboard.map((entry) => (
             <div key={entry.rank} className="leaderboard-row">
@@ -560,10 +893,7 @@ function ProfileTab() {
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading">
-          <h2>Discover</h2>
-          <span>Projects</span>
-        </div>
+        <div className="panel-heading"><h2>Discover</h2><span>Projects</span></div>
         <div className="discover-grid">
           {discoverProjects.map((project) => (
             <div key={project.name} className={cn("discover-card", accentClassMap[project.accent])}>
@@ -579,17 +909,7 @@ function ProfileTab() {
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  tone,
-  subtext,
-}: {
-  label: string;
-  value: string;
-  tone: "green" | "gold" | "violet";
-  subtext: string;
-}) {
+function MetricCard({ label, value, tone, subtext }: { label: string; value: string; tone: "green" | "gold" | "violet"; subtext: string }) {
   return (
     <div className="metric-card">
       <span className="metric-label">{label}</span>
