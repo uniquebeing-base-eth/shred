@@ -1,12 +1,13 @@
 {
-  "buildCommand": "bun run build",
-  "installCommand": "bun install",
-  "devCommand": "bun run dev",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev",
   "env": {
     "NODE_ENV": "production"
   },
   "functions": {
     "api/**/*.ts": {
+      "runtime": "edge",
       "memory": 1024,
       "maxDuration": 10
     }
