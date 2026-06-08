@@ -89,6 +89,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "SHRED — Discover and Collect on Celo" },
+      { name: "description", content: "Shred is a mobile game for discovering Celo ecosystem projects and collecting digital assets." },
+      { property: "og:description", content: "Shred is a mobile game for discovering Celo ecosystem projects and collecting digital assets." },
+      { name: "twitter:description", content: "Shred is a mobile game for discovering Celo ecosystem projects and collecting digital assets." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/jlR3HIKEaHh8N9sVgdPS7Q6Gw333/social-images/social-1780919551057-F5034465-B664-4726-A9F2-9DB602A50F5D.webp" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/jlR3HIKEaHh8N9sVgdPS7Q6Gw333/social-images/social-1780919551057-F5034465-B664-4726-A9F2-9DB602A50F5D.webp" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
