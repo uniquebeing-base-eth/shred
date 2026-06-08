@@ -109,6 +109,7 @@ export const enterShred = createServerFn({ method: "POST" })
     const userId = session.data.user!.id;
 
     // Ensure profile row exists with the claimed username + MiniPay address.
+    const referralCode = (await import("crypto")).randomBytes(4).toString("hex").toUpperCase();
     await supabaseAdmin
       .from("profiles")
       .upsert(
@@ -119,8 +120,9 @@ export const enterShred = createServerFn({ method: "POST" })
           username_claimed_at: new Date().toISOString(),
           username_tx_hash: data.txHash ?? null,
           minipay_address: data.address,
+          referral_code: referralCode,
         },
-        { onConflict: "id" },
+        { onConflict: "id", ignoreDuplicates: false },
       );
 
     // Ensure a backend-managed Shred wallet exists for this user.
