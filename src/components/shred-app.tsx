@@ -19,7 +19,7 @@ import {
   type NavTab,
   type PackOption,
 } from "@/lib/shred-data";
-import { openShredPack, enterShred } from "@/lib/shred-functions";
+import { openShredPack, enterShred, executeShredSwap } from "@/lib/shred-functions";
 import { sfx, isMuted, setMuted } from "@/lib/audio";
 import {
   checkUsername,
@@ -27,8 +27,11 @@ import {
   connectWallet,
   getUsernameForAddress,
   isMiniPay,
+  getInjectedProvider,
 } from "@/lib/celo";
+import { quoteSwap, TOKENS, type TokenKey, type SwapQuote } from "@/lib/ubeswap";
 import { supabase } from "@/integrations/supabase/client";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import type { Address } from "viem";
 
 type PackKey = PackOption["key"];
