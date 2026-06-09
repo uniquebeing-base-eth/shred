@@ -14,7 +14,7 @@ import {
   leaderboard,
   packOptions,
   profileStats,
-  swapRoutes,
+  profileStats,
   tokenHoldings,
   type NavTab,
   type PackOption,
