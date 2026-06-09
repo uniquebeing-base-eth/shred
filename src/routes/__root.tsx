@@ -95,6 +95,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:description", content: "Shred is a mobile game for discovering Celo ecosystem projects and collecting digital assets." },
       { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/jlR3HIKEaHh8N9sVgdPS7Q6Gw333/social-images/social-1780919551057-F5034465-B664-4726-A9F2-9DB602A50F5D.webp" },
       { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/jlR3HIKEaHh8N9sVgdPS7Q6Gw333/social-images/social-1780919551057-F5034465-B664-4726-A9F2-9DB602A50F5D.webp" },
+      { name: "talentapp:project_verification", content: "7b1f86584adfdeed8c6eba7b4deb5c1c88336ce0094e9c660c98cb97ffd8d7ebab28e47a238b61307b67213a0eef33ac4edfe97d02dd1268e2ff3e322a8a08c9" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

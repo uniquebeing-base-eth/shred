@@ -14,12 +14,11 @@ import {
   leaderboard,
   packOptions,
   profileStats,
-  swapRoutes,
   tokenHoldings,
   type NavTab,
   type PackOption,
 } from "@/lib/shred-data";
-import { openShredPack, enterShred } from "@/lib/shred-functions";
+import { openShredPack, enterShred, executeShredSwap } from "@/lib/shred-functions";
 import { sfx, isMuted, setMuted } from "@/lib/audio";
 import {
   checkUsername,
@@ -27,8 +26,11 @@ import {
   connectWallet,
   getUsernameForAddress,
   isMiniPay,
+  getInjectedProvider,
 } from "@/lib/celo";
+import { quoteSwap, TOKENS, type TokenKey, type SwapQuote } from "@/lib/ubeswap";
 import { supabase } from "@/integrations/supabase/client";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import type { Address } from "viem";
 
 type PackKey = PackOption["key"];
@@ -350,6 +352,13 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   const startConnect = async () => {
     setError(null);
     try {
+      if (!getInjectedProvider()) {
+        // Preview/browser fallback: create a local burner so signup still works.
+        const burner = privateKeyToAccount(generatePrivateKey()).address;
+        setAddress(burner);
+        setStage("name");
+        return;
+      }
       const addr = await connectWallet();
       setAddress(addr);
       const already = await getUsernameForAddress(addr);
@@ -399,8 +408,13 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
     sfx.click();
     setStage("claiming");
     setError(null);
-    setStatusText("Confirm in your wallet…");
     try {
+      if (!getInjectedProvider()) {
+        setStatusText("Provisioning your Shred wallet…");
+        await enterFlow(address, name);
+        return;
+      }
+      setStatusText("Confirm in your wallet…");
       const tx = await claimUsernameOnchain(name, address);
       setStatusText("Waiting for confirmation…");
       await enterFlow(address, name, tx);
@@ -821,39 +835,166 @@ function CollectionTab() {
 }
 
 function SwapTab() {
+  const exec = useServerFn(executeShredSwap);
+  const [from, setFrom] = useState<TokenKey>("CELO");
+  const [to, setTo] = useState<TokenKey>("cUSD");
+  const [amount, setAmount] = useState("1");
+  const [slippage, setSlippage] = useState(0.5);
+  const [quote, setQuote] = useState<SwapQuote | null>(null);
+  const [quoteErr, setQuoteErr] = useState<string | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ txHash: string } | { error: string } | null>(null);
+
+  useEffect(() => {
+    setQuote(null);
+    setQuoteErr(null);
+    if (!amount || Number(amount) <= 0 || from === to) return;
+    const t = window.setTimeout(async () => {
+      setQuoting(true);
+      try {
+        const q = await quoteSwap(from, to, amount, slippage);
+        setQuote(q);
+      } catch (e) {
+        setQuoteErr(e instanceof Error ? e.message : "No route");
+      } finally {
+        setQuoting(false);
+      }
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [from, to, amount, slippage]);
+
+  const submit = async () => {
+    if (!quote) return;
+    setSubmitting(true);
+    setResult(null);
+    try {
+      sfx.click();
+      const res = await exec({
+        data: {
+          fromSymbol: from,
+          toSymbol: to,
+          amountIn: amount,
+          minAmountOut: quote.minOut,
+          path: quote.path.map((k) => TOKENS[k].address),
+        },
+      });
+      sfx.success();
+      setResult({ txHash: res.txHash });
+    } catch (e) {
+      sfx.error();
+      setResult({ error: e instanceof Error ? e.message : "Swap failed" });
+    } finally {
+      setSubmitting(false);
+      setConfirming(false);
+    }
+  };
+
   return (
     <div className="tab-stack">
       <section className="feature-card deep-space">
         <div>
-          <p className="section-chip">Swap</p>
-          <h1>Cash out anytime.</h1>
-          <p>Convert ecosystem tokens to CELO or cUSD and send to MiniPay.</p>
+          <p className="section-chip">Cash Out</p>
+          <h1>Convert your rewards.</h1>
+          <p>Live Ubeswap routes. Quote, confirm, and cash out to CELO or cUSD.</p>
         </div>
       </section>
 
       <section className="panel-card">
-        <div className="panel-heading"><h2>Available Routes</h2><span>Live</span></div>
-        <div className="swap-list">
-          {swapRoutes.map((route) => (
-            <div key={`${route.from}-${route.to}`} className="swap-row">
-              <div>
-                <strong>{route.from} → {route.to}</strong>
-                <p>Fee {route.fee} · Price impact {route.impact}</p>
-              </div>
-              <span>{route.output}</span>
+        <div className="panel-heading"><h2>Swap</h2><span>Ubeswap V2</span></div>
+
+        <div className="swap-form">
+          <label className="swap-field">
+            <span>From</span>
+            <div className="swap-row-input">
+              <select value={from} onChange={(e) => setFrom(e.target.value as TokenKey)}>
+                {Object.keys(TOKENS).map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+              <input
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                placeholder="0.00"
+              />
             </div>
-          ))}
+          </label>
+          <button
+            type="button"
+            className="swap-flip"
+            onClick={() => { const f = from; setFrom(to); setTo(f); }}
+            aria-label="Flip tokens"
+          >⇅</button>
+          <label className="swap-field">
+            <span>To</span>
+            <div className="swap-row-input">
+              <select value={to} onChange={(e) => setTo(e.target.value as TokenKey)}>
+                {Object.keys(TOKENS).map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+              <strong className="swap-out">
+                {quoting ? "…" : quote ? Number(quote.amountOut).toFixed(6) : "—"}
+              </strong>
+            </div>
+          </label>
+
+          <div className="swap-meta">
+            <div><span>Route</span><strong>{quote ? quote.path.join(" → ") : "—"}</strong></div>
+            <div><span>Fee</span><strong>{quote ? `${quote.feePct.toFixed(2)}%` : "—"}</strong></div>
+            <div><span>Price impact</span><strong>{quote ? `${quote.priceImpactPct.toFixed(2)}%` : "—"}</strong></div>
+            <div><span>Min received</span><strong>{quote ? `${Number(quote.minOut).toFixed(6)} ${to}` : "—"}</strong></div>
+            <div><span>Router</span><strong>{quote?.routerDisplay ?? "—"}</strong></div>
+          </div>
+
+          <div className="swap-slippage">
+            <span>Slippage</span>
+            {[0.1, 0.5, 1].map((s) => (
+              <button
+                type="button"
+                key={s}
+                className={cn("slip-chip", slippage === s && "slip-chip-active")}
+                onClick={() => setSlippage(s)}
+              >{s}%</button>
+            ))}
+          </div>
+
+          {quoteErr ? <p className="swap-error">{quoteErr}</p> : null}
+
+          <Button
+            variant="gold"
+            size="arcade"
+            disabled={!quote || quoting}
+            onClick={() => { sfx.click(); setConfirming(true); }}
+          >Review Cash Out</Button>
         </div>
       </section>
 
-      <section className="feature-card game-sky compact-banner">
-        <div>
-          <p className="section-chip">Cash Out</p>
-          <h2>Send to MiniPay.</h2>
-          <p>Supported assets ship straight. Others convert first.</p>
-        </div>
-        <Button variant="gold" size="arcadeSm" onClick={() => sfx.click()}>Prepare</Button>
-      </section>
+      <AnimatePresence>
+        {confirming && quote ? (
+          <motion.div className="overlay-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="overlay-card claim-modal" initial={{ scale: 0.92, y: 20 }} animate={{ scale: 1, y: 0 }}>
+              <p className="eyebrow">Confirm Cash Out</p>
+              <h3>{amount} {from} → {Number(quote.amountOut).toFixed(6)} {to}</h3>
+              <div className="claim-summary">
+                <div className="claim-row"><span>Route</span><strong>{quote.path.join(" → ")}</strong></div>
+                <div className="claim-row"><span>Fee</span><strong>{quote.feePct.toFixed(2)}%</strong></div>
+                <div className="claim-row"><span>Price impact</span><strong>{quote.priceImpactPct.toFixed(2)}%</strong></div>
+                <div className="claim-row"><span>Slippage</span><strong>{quote.slippagePct}%</strong></div>
+                <div className="claim-row"><span>Min received</span><strong>{Number(quote.minOut).toFixed(6)} {to}</strong></div>
+              </div>
+              {result && "error" in result ? <p className="swap-error">{result.error}</p> : null}
+              {result && "txHash" in result ? (
+                <p className="welcome-note">Cashed out · tx {result.txHash.slice(0, 10)}…</p>
+              ) : null}
+              <Button variant="arcade" size="arcade" disabled={submitting} onClick={submit}>
+                {submitting ? "Signing & sending…" : "Sign & Send"}
+              </Button>
+              <button type="button" className="ghost-close" onClick={() => { setConfirming(false); setResult(null); }}>
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
