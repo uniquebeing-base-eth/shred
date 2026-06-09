@@ -353,6 +353,13 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   const startConnect = async () => {
     setError(null);
     try {
+      if (!getInjectedProvider()) {
+        // Preview/browser fallback: create a local burner so signup still works.
+        const burner = privateKeyToAccount(generatePrivateKey()).address;
+        setAddress(burner);
+        setStage("name");
+        return;
+      }
       const addr = await connectWallet();
       setAddress(addr);
       const already = await getUsernameForAddress(addr);
