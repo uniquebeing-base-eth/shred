@@ -409,8 +409,13 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
     sfx.click();
     setStage("claiming");
     setError(null);
-    setStatusText("Confirm in your wallet…");
     try {
+      if (!getInjectedProvider()) {
+        setStatusText("Provisioning your Shred wallet…");
+        await enterFlow(address, name);
+        return;
+      }
+      setStatusText("Confirm in your wallet…");
       const tx = await claimUsernameOnchain(name, address);
       setStatusText("Waiting for confirmation…");
       await enterFlow(address, name, tx);
