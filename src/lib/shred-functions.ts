@@ -14,6 +14,15 @@ const enterInput = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
+  previewMode: z.boolean().optional(),
+});
+
+const swapInput = z.object({
+  fromSymbol: z.enum(["CELO", "cUSD", "cEUR", "UBE"]),
+  toSymbol: z.enum(["CELO", "cUSD", "cEUR", "UBE"]),
+  amountIn: z.string().min(1),
+  minAmountOut: z.string().min(1),
+  path: z.array(z.string()).min(2),
 });
 
 const rewardSets = {
