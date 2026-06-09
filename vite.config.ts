@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import viteTsConfigPaths from "vite-tsconfig-paths";
-import { tanstackStartVite } from "@tanstack/react-start/vite";
+import { tanstackStart as tanstackStartVite } from "@tanstack/react-start/plugin/vite";
 import tailwindcss from "tailwindcss";
 import viteTailwindcss from "@tailwindcss/vite";
 
