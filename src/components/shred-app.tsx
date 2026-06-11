@@ -205,6 +205,11 @@ export function ShredApp() {
             </header>
 
             <section className="content-area">
+              {!session.shred_wallet_address ? (
+                <ActivateWalletBanner
+                  onActivated={(addr) => setSession({ ...session, shred_wallet_address: addr })}
+                />
+              ) : null}
               {activeTab === "home" && (
                 <HomeTab
                   onOpenStarter={() => {
