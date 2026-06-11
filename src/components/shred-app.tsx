@@ -46,7 +46,7 @@ type OpeningResult = {
 type Session = {
   username: string;
   minipay_address: string;
-  shred_wallet_address: string;
+  shred_wallet_address: string | null;
 };
 
 const navItems: Array<{ key: NavTab; label: string; icon: typeof House }> = [
