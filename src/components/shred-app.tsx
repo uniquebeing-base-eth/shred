@@ -18,7 +18,7 @@ import {
   type NavTab,
   type PackOption,
 } from "@/lib/shred-data";
-import { openShredPack, enterShred, executeShredSwap } from "@/lib/shred-functions";
+import { openShredPack, enterShred, executeShredSwap, activateShredWallet } from "@/lib/shred-functions";
 import { sfx, isMuted, setMuted } from "@/lib/audio";
 import {
   checkUsername,
