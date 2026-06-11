@@ -18,7 +18,7 @@ import {
   type NavTab,
   type PackOption,
 } from "@/lib/shred-data";
-import { openShredPack, enterShred, executeShredSwap } from "@/lib/shred-functions";
+import { openShredPack, enterShred, executeShredSwap, activateShredWallet } from "@/lib/shred-functions";
 import { sfx, isMuted, setMuted } from "@/lib/audio";
 import {
   checkUsername,
@@ -46,7 +46,7 @@ type OpeningResult = {
 type Session = {
   username: string;
   minipay_address: string;
-  shred_wallet_address: string;
+  shred_wallet_address: string | null;
 };
 
 const navItems: Array<{ key: NavTab; label: string; icon: typeof House }> = [
@@ -205,6 +205,11 @@ export function ShredApp() {
             </header>
 
             <section className="content-area">
+              {!session.shred_wallet_address ? (
+                <ActivateWalletBanner
+                  onActivated={(addr) => setSession({ ...session, shred_wallet_address: addr })}
+                />
+              ) : null}
               {activeTab === "home" && (
                 <HomeTab
                   onOpenStarter={() => {
@@ -488,7 +493,44 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   );
 }
 
-/* ----------------------- Pack visuals ---------------------- */
+/* ----------------------- Activate Wallet ---------------------- */
+
+function ActivateWalletBanner({ onActivated }: { onActivated: (address: string) => void }) {
+  const activate = useServerFn(activateShredWallet);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onActivate = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      sfx.click();
+      const res = await activate();
+      sfx.success();
+      onActivated(res.shred_wallet_address);
+    } catch (e) {
+      sfx.error();
+      setError(e instanceof Error ? e.message : "Activation failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="feature-card purple-flare">
+      <div>
+        <p className="section-chip">One more step</p>
+        <h2>Activate your Shred wallet</h2>
+        <p>Creates your in-game inventory wallet so you can collect rewards and cash out.</p>
+        {error ? <p className="swap-error">{error}</p> : null}
+      </div>
+      <Button variant="gold" size="arcadeSm" disabled={loading} onClick={onActivate}>
+        {loading ? "Activating…" : "Activate"}
+      </Button>
+    </section>
+  );
+}
+
 
 function ShredPack({ pack, size = "lg" }: { pack: PackOption; size?: "sm" | "md" | "lg" }) {
   const sizes = { sm: 96, md: 140, lg: 200 } as const;

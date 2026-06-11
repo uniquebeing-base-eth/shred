@@ -78,28 +78,25 @@ export const openShredPack = createServerFn({ method: "POST" })
   });
 
 /**
- * Sign-in entry point after the player claims a username on-chain via MiniPay.
+ * Sign-in entry point after the player claims a username.
  * Deterministically creates (or reuses) a Supabase user keyed on the wallet
- * address, ensures a profile row stores the username + MiniPay address, and
- * provisions an app-managed Celo wallet for rewards.
+ * address and ensures a profile row stores the username + MiniPay address.
+ * Does NOT create the Shred reward wallet — the user activates it explicitly.
  */
 export const enterShred = createServerFn({ method: "POST" })
   .inputValidator((data) => enterInput.parse(data))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { createShredWallet } = await import("@/lib/wallet.server");
-    const { createHmac } = await import("crypto");
+    const { createHmac, randomBytes } = await import("node:crypto");
 
     const addr = data.address.toLowerCase();
     const secret = process.env.WALLET_ENCRYPTION_KEY ?? "shred-fallback";
     const email = `${addr}@minipay.shred.local`;
     const password = createHmac("sha256", secret).update(`pw:${addr}`).digest("hex");
 
-    // Try sign-in first.
     let session = await supabaseAdmin.auth.signInWithPassword({ email, password });
 
     if (session.error || !session.data.session) {
-      // Create the user (auto-confirmed via admin).
       const created = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
@@ -117,12 +114,8 @@ export const enterShred = createServerFn({ method: "POST" })
 
     const userId = session.data.user!.id;
 
-    // Ensure profile row exists with the claimed username + MiniPay address.
     const existingProfile = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("id", userId)
-      .maybeSingle();
+      .from("profiles").select("id").eq("id", userId).maybeSingle();
 
     const profileFields = {
       username: data.username,
@@ -135,30 +128,13 @@ export const enterShred = createServerFn({ method: "POST" })
     if (existingProfile.data) {
       await supabaseAdmin.from("profiles").update(profileFields).eq("id", userId);
     } else {
-      const cryptoMod = await import("crypto");
-      const referralCode = cryptoMod.randomBytes(4).toString("hex").toUpperCase();
+      const referralCode = randomBytes(4).toString("hex").toUpperCase();
       await supabaseAdmin.from("profiles").insert({ id: userId, referral_code: referralCode, ...profileFields });
     }
 
-    // Ensure a backend-managed Shred wallet exists for this user.
+    // Look up wallet but do NOT create it here.
     const existing = await supabaseAdmin
-      .from("user_wallets")
-      .select("address")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    let shredAddress = existing.data?.address as string | undefined;
-    if (!shredAddress) {
-      const w = createShredWallet();
-      const ins = await supabaseAdmin.from("user_wallets").insert({
-        user_id: userId,
-        address: w.address,
-        encrypted_private_key: w.encrypted_private_key,
-        encryption_iv: w.encryption_iv,
-      });
-      if (ins.error) throw new Error(`Wallet provisioning failed: ${ins.error.message}`);
-      shredAddress = w.address;
-    }
+      .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
 
     return {
       access_token: session.data.session.access_token,
@@ -166,8 +142,39 @@ export const enterShred = createServerFn({ method: "POST" })
       user_id: userId,
       username: data.username,
       minipay_address: data.address,
-      shred_wallet_address: shredAddress,
+      shred_wallet_address: (existing.data?.address as string | undefined) ?? null,
     };
+  });
+
+/**
+ * Provisions the user's app-managed Celo wallet on demand. Called when the
+ * player taps "Activate Wallet" from the in-app prompt. Idempotent.
+ */
+export const activateShredWallet = createServerFn({ method: "POST" })
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { createShredWallet } = await import("@/lib/wallet.server");
+    const { getRequestHeader } = await import("@tanstack/react-start/server");
+
+    const token = getRequestHeader("authorization")?.replace(/^Bearer\s+/i, "");
+    if (!token) throw new Error("Not signed in");
+    const userRes = await supabaseAdmin.auth.getUser(token);
+    if (userRes.error || !userRes.data.user) throw new Error("Session expired");
+    const userId = userRes.data.user.id;
+
+    const existing = await supabaseAdmin
+      .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
+    if (existing.data?.address) return { shred_wallet_address: existing.data.address as string };
+
+    const w = createShredWallet();
+    const ins = await supabaseAdmin.from("user_wallets").insert({
+      user_id: userId,
+      address: w.address,
+      encrypted_private_key: w.encrypted_private_key,
+      encryption_iv: w.encryption_iv,
+    });
+    if (ins.error) throw new Error(`Wallet activation failed: ${ins.error.message}`);
+    return { shred_wallet_address: w.address };
   });
 
 /**

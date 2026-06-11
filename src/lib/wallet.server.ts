@@ -1,7 +1,7 @@
 // Server-only crypto + wallet management helpers.
 // Encrypts each user's Celo private key with AES-256-GCM using
 // WALLET_ENCRYPTION_KEY (32 raw bytes, base64-encoded in the secret).
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import type { Hex } from "viem";
 
