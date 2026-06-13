@@ -137,9 +137,6 @@ export const enterShred = createServerFn({ method: "POST" })
       if (inserted.error) throw new Error(`Username setup failed: ${inserted.error.message}`);
     }
 
-    const role = await supabaseAdmin.from("user_roles").upsert({ user_id: userId, role: "user" }, { onConflict: "user_id,role" });
-    if (role.error) throw new Error(`Account role setup failed: ${role.error.message}`);
-
     // Look up wallet but do NOT create it here.
     const existing = await supabaseAdmin
       .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
