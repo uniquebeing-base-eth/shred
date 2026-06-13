@@ -403,6 +403,7 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   const [statusText, setStatusText] = useState("");
   const [available, setAvailable] = useState<boolean | null>(null);
   const checkRef = useRef<number | null>(null);
+  const autoConnectRef = useRef(false);
 
   const startConnect = async () => {
     setError(null);
@@ -430,6 +431,12 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
       setError(e instanceof Error ? e.message : "Could not connect wallet");
     }
   };
+
+  useEffect(() => {
+    if (stage !== "connect" || autoConnectRef.current) return;
+    autoConnectRef.current = true;
+    window.setTimeout(() => void startConnect(), 250);
+  }, [stage]);
 
   const enterFlow = async (addr: Address, username: string, txHash?: string) => {
     setStage("entering");
@@ -459,20 +466,21 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   }, [name, stage]);
 
   const submitClaim = async () => {
-    if (!address || !name || available !== true) return;
+    const cleanName = name.trim().toLowerCase();
+    if (!address || !cleanName || available !== true) return;
     sfx.click();
     setStage("claiming");
     setError(null);
     try {
       if (!getInjectedProvider()) {
-        setStatusText("Provisioning your Shred wallet…");
-        await enterFlow(address, name);
+        setStatusText("Creating your Shred account…");
+        await enterFlow(address, cleanName);
         return;
       }
       setStatusText("Confirm in your wallet…");
-      const tx = await claimUsernameOnchain(name, address);
+      const tx = await claimUsernameOnchain(cleanName, address);
       setStatusText("Waiting for confirmation…");
-      await enterFlow(address, name, tx);
+      await enterFlow(address, cleanName, tx);
     } catch (e) {
       sfx.error();
       setError(e instanceof Error ? e.message : "Claim failed");
@@ -497,8 +505,8 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
         {stage === "connect" && (
           <>
             <h3>Connect to Shred</h3>
-            <p>{isMiniPay() ? "We detected MiniPay. Connect to continue." : "Open Shred inside MiniPay for the best experience."}</p>
-            <Button variant="arcade" size="arcade" onClick={startConnect}>Connect Wallet</Button>
+            <p>{isMiniPay() ? "MiniPay detected. Connecting…" : "Open Shred inside MiniPay for the best experience, or continue in preview."}</p>
+            <Button variant="arcade" size="arcade" onClick={startConnect}>Continue</Button>
           </>
         )}
         {stage === "name" && (
@@ -515,8 +523,9 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
             <div className={cn("availability", available === true && "ok", available === false && "bad")}>
               {!name ? "Letters, numbers, underscore." : available === null ? "Checking…" : available ? "Available!" : (error ?? "Taken")}
             </div>
+            {error && available === true ? <p className="swap-error">{error}</p> : null}
             <Button variant="gold" size="arcade" disabled={available !== true} onClick={submitClaim}>
-              Claim Onchain
+              {getInjectedProvider() ? "Claim Onchain" : "Register"}
             </Button>
           </>
         )}
