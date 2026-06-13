@@ -443,6 +443,8 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
     setStatusText("Setting up your collection wallet…");
     const res = await enter({ data: { address: addr, username, txHash } });
     await supabase.auth.setSession({ access_token: res.access_token, refresh_token: res.refresh_token });
+    const restored = await supabase.auth.getSession();
+    if (!restored.data.session) throw new Error("Account created, but session restore failed. Please try again.");
     sfx.success();
     setStage("done");
     onEntered({ username: res.username, minipay_address: res.minipay_address, shred_wallet_address: res.shred_wallet_address });
