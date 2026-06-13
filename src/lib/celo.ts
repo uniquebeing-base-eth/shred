@@ -54,16 +54,22 @@ export async function connectWallet(): Promise<Address> {
 }
 
 export async function checkUsername(username: string): Promise<{ available: boolean; reason?: string }> {
-  if (!/^[a-z0-9_]{3,20}$/i.test(username)) {
+  const clean = username.trim().toLowerCase();
+  if (!/^[a-z0-9_]{3,20}$/.test(clean)) {
     return { available: false, reason: "3–20 chars, letters/numbers/underscore only" };
   }
-  const ok = await publicClient.readContract({
-    address: USERNAME_REGISTRY,
-    abi: usernameRegistryAbi,
-    functionName: "isAvailable",
-    args: [username],
-  });
-  return { available: ok, reason: ok ? undefined : "Already taken" };
+  if (!getInjectedProvider()) return { available: true };
+  try {
+    const ok = await publicClient.readContract({
+      address: USERNAME_REGISTRY,
+      abi: usernameRegistryAbi,
+      functionName: "isAvailable",
+      args: [clean],
+    });
+    return { available: ok, reason: ok ? undefined : "Already taken" };
+  } catch {
+    return { available: true };
+  }
 }
 
 export async function getUsernameForAddress(address: Address): Promise<string | null> {
