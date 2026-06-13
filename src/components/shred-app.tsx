@@ -113,12 +113,54 @@ export function ShredApp() {
   const [openingResult, setOpeningResult] = useState<OpeningResult | null>(null);
   const [revealCount, setRevealCount] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [muted, setMutedState] = useState(false);
 
   const openPack = useServerFn(openShredPack);
 
   useEffect(() => {
     setMutedState(isMuted());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const current = data.session?.user;
+        if (!current) return;
+
+        const [{ data: profile }, { data: wallet }] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("username, display_name, minipay_address")
+            .eq("id", current.id)
+            .maybeSingle(),
+          supabase
+            .from("user_wallets")
+            .select("address")
+            .eq("user_id", current.id)
+            .maybeSingle(),
+        ]);
+
+        if (cancelled) return;
+        setSession({
+          username: profile?.username ?? profile?.display_name ?? current.user_metadata?.display_name ?? "player",
+          minipay_address: profile?.minipay_address ?? current.user_metadata?.minipay_address ?? "",
+          shred_wallet_address: wallet?.address ?? null,
+        });
+      } catch (e) {
+        console.error("Session restore failed", e);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    }
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const currentPack = useMemo(
@@ -180,7 +222,15 @@ export function ShredApp() {
           {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
         </button>
 
-        {!session ? (
+        {authLoading ? (
+          <section className="welcome-panel">
+            <img src={shredLogo.url} alt="Shred logo" className="welcome-logo" />
+            <div className="welcome-copy">
+              <h1>Loading Shred</h1>
+              <p>Restoring your account…</p>
+            </div>
+          </section>
+        ) : !session ? (
           <WelcomeScreen onEntered={setSession} />
         ) : (
           <>
@@ -353,6 +403,7 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   const [statusText, setStatusText] = useState("");
   const [available, setAvailable] = useState<boolean | null>(null);
   const checkRef = useRef<number | null>(null);
+  const autoConnectRef = useRef(false);
 
   const startConnect = async () => {
     setError(null);
@@ -381,11 +432,19 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
     }
   };
 
+  useEffect(() => {
+    if (stage !== "connect" || autoConnectRef.current) return;
+    autoConnectRef.current = true;
+    window.setTimeout(() => void startConnect(), 250);
+  }, [stage]);
+
   const enterFlow = async (addr: Address, username: string, txHash?: string) => {
     setStage("entering");
     setStatusText("Setting up your collection wallet…");
     const res = await enter({ data: { address: addr, username, txHash } });
     await supabase.auth.setSession({ access_token: res.access_token, refresh_token: res.refresh_token });
+    const restored = await supabase.auth.getSession();
+    if (!restored.data.session) throw new Error("Account created, but session restore failed. Please try again.");
     sfx.success();
     setStage("done");
     onEntered({ username: res.username, minipay_address: res.minipay_address, shred_wallet_address: res.shred_wallet_address });
@@ -409,20 +468,21 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
   }, [name, stage]);
 
   const submitClaim = async () => {
-    if (!address || !name || available !== true) return;
+    const cleanName = name.trim().toLowerCase();
+    if (!address || !cleanName || available !== true) return;
     sfx.click();
     setStage("claiming");
     setError(null);
     try {
       if (!getInjectedProvider()) {
-        setStatusText("Provisioning your Shred wallet…");
-        await enterFlow(address, name);
+        setStatusText("Creating your Shred account…");
+        await enterFlow(address, cleanName);
         return;
       }
       setStatusText("Confirm in your wallet…");
-      const tx = await claimUsernameOnchain(name, address);
+      const tx = await claimUsernameOnchain(cleanName, address);
       setStatusText("Waiting for confirmation…");
-      await enterFlow(address, name, tx);
+      await enterFlow(address, cleanName, tx);
     } catch (e) {
       sfx.error();
       setError(e instanceof Error ? e.message : "Claim failed");
@@ -447,8 +507,8 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
         {stage === "connect" && (
           <>
             <h3>Connect to Shred</h3>
-            <p>{isMiniPay() ? "We detected MiniPay. Connect to continue." : "Open Shred inside MiniPay for the best experience."}</p>
-            <Button variant="arcade" size="arcade" onClick={startConnect}>Connect Wallet</Button>
+            <p>{isMiniPay() ? "MiniPay detected. Connecting…" : "Open Shred inside MiniPay for the best experience, or continue in preview."}</p>
+            <Button variant="arcade" size="arcade" onClick={startConnect}>Continue</Button>
           </>
         )}
         {stage === "name" && (
@@ -465,8 +525,9 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
             <div className={cn("availability", available === true && "ok", available === false && "bad")}>
               {!name ? "Letters, numbers, underscore." : available === null ? "Checking…" : available ? "Available!" : (error ?? "Taken")}
             </div>
+            {error && available === true ? <p className="swap-error">{error}</p> : null}
             <Button variant="gold" size="arcade" disabled={available !== true} onClick={submitClaim}>
-              Claim Onchain
+              {getInjectedProvider() ? "Claim Onchain" : "Register"}
             </Button>
           </>
         )}
