@@ -118,6 +118,7 @@ export const enterShred = createServerFn({ method: "POST" })
 
     const existingProfile = await supabaseAdmin
       .from("profiles").select("id").eq("id", userId).maybeSingle();
+    if (existingProfile.error) throw new Error(`Profile lookup failed: ${existingProfile.error.message}`);
 
     const profileFields = {
       username,
@@ -128,17 +129,21 @@ export const enterShred = createServerFn({ method: "POST" })
     };
 
     if (existingProfile.data) {
-      await supabaseAdmin.from("profiles").update(profileFields).eq("id", userId);
+      const updated = await supabaseAdmin.from("profiles").update(profileFields).eq("id", userId);
+      if (updated.error) throw new Error(`Username setup failed: ${updated.error.message}`);
     } else {
       const referralCode = randomBytes(4).toString("hex").toUpperCase();
-      await supabaseAdmin.from("profiles").insert({ id: userId, referral_code: referralCode, ...profileFields });
+      const inserted = await supabaseAdmin.from("profiles").insert({ id: userId, referral_code: referralCode, ...profileFields });
+      if (inserted.error) throw new Error(`Username setup failed: ${inserted.error.message}`);
     }
 
-    await supabaseAdmin.from("user_roles").upsert({ user_id: userId, role: "user" }, { onConflict: "user_id,role" });
+    const role = await supabaseAdmin.from("user_roles").upsert({ user_id: userId, role: "user" }, { onConflict: "user_id,role" });
+    if (role.error) throw new Error(`Account role setup failed: ${role.error.message}`);
 
     // Look up wallet but do NOT create it here.
     const existing = await supabaseAdmin
       .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
+    if (existing.error) throw new Error(`Wallet lookup failed: ${existing.error.message}`);
 
     return {
       access_token: session.data.session.access_token,
