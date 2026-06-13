@@ -92,9 +92,19 @@ export const enterShred = createServerFn({ method: "POST" })
 
     const addr = data.address.toLowerCase();
     const username = data.username.trim().toLowerCase();
-    const secret = process.env.WALLET_ENCRYPTION_KEY ?? "shred-fallback";
+    const secret = process.env.WALLET_ENCRYPTION_KEY;
+    if (!secret) throw new Error("Account setup is not configured yet. Add WALLET_ENCRYPTION_KEY in deployment secrets.");
     const email = `${addr}@minipay.shred.local`;
     const password = createHmac("sha256", secret).update(`pw:${addr}`).digest("hex");
+
+    const taken = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("username", username)
+      .neq("minipay_address", addr)
+      .maybeSingle();
+    if (taken.error) throw new Error(`Username check failed: ${taken.error.message}`);
+    if (taken.data) throw new Error("That username is already registered in Shred.");
 
     let session = await supabaseAdmin.auth.signInWithPassword({ email, password });
 
