@@ -159,7 +159,6 @@ export const enterShred = createServerFn({ method: "POST" })
 export const activateShredWallet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { createShredWallet } = await import("@/lib/wallet.server");
     const userId = context.userId;
 
