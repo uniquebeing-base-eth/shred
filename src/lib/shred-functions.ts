@@ -5,6 +5,7 @@
 // - openShredPack: returns a (mocked) reward bundle for a pack open.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const openPackInput = z.object({
   packKey: z.enum(["starter", "mystery", "alpha", "legendary"]),
@@ -90,6 +91,7 @@ export const enterShred = createServerFn({ method: "POST" })
     const { createHmac, randomBytes } = await import("node:crypto");
 
     const addr = data.address.toLowerCase();
+    const username = data.username.trim().toLowerCase();
     const secret = process.env.WALLET_ENCRYPTION_KEY ?? "shred-fallback";
     const email = `${addr}@minipay.shred.local`;
     const password = createHmac("sha256", secret).update(`pw:${addr}`).digest("hex");
@@ -101,7 +103,7 @@ export const enterShred = createServerFn({ method: "POST" })
         email,
         password,
         email_confirm: true,
-        user_metadata: { display_name: data.username, minipay_address: data.address },
+        user_metadata: { display_name: username, minipay_address: addr },
       });
       if (created.error || !created.data.user) {
         throw new Error(`Sign-in failed: ${session.error?.message ?? created.error?.message ?? "unknown"}`);
@@ -118,11 +120,11 @@ export const enterShred = createServerFn({ method: "POST" })
       .from("profiles").select("id").eq("id", userId).maybeSingle();
 
     const profileFields = {
-      username: data.username,
-      display_name: data.username,
+      username,
+      display_name: username,
       username_claimed_at: new Date().toISOString(),
       username_tx_hash: data.txHash ?? null,
-      minipay_address: data.address,
+      minipay_address: addr,
     };
 
     if (existingProfile.data) {
@@ -132,6 +134,8 @@ export const enterShred = createServerFn({ method: "POST" })
       await supabaseAdmin.from("profiles").insert({ id: userId, referral_code: referralCode, ...profileFields });
     }
 
+    await supabaseAdmin.from("user_roles").upsert({ user_id: userId, role: "user" }, { onConflict: "user_id,role" });
+
     // Look up wallet but do NOT create it here.
     const existing = await supabaseAdmin
       .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
@@ -140,8 +144,8 @@ export const enterShred = createServerFn({ method: "POST" })
       access_token: session.data.session.access_token,
       refresh_token: session.data.session.refresh_token,
       user_id: userId,
-      username: data.username,
-      minipay_address: data.address,
+      username,
+      minipay_address: addr,
       shred_wallet_address: (existing.data?.address as string | undefined) ?? null,
     };
   });
@@ -151,16 +155,11 @@ export const enterShred = createServerFn({ method: "POST" })
  * player taps "Activate Wallet" from the in-app prompt. Idempotent.
  */
 export const activateShredWallet = createServerFn({ method: "POST" })
-  .handler(async () => {
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { createShredWallet } = await import("@/lib/wallet.server");
-    const { getRequestHeader } = await import("@tanstack/react-start/server");
-
-    const token = getRequestHeader("authorization")?.replace(/^Bearer\s+/i, "");
-    if (!token) throw new Error("Not signed in");
-    const userRes = await supabaseAdmin.auth.getUser(token);
-    if (userRes.error || !userRes.data.user) throw new Error("Session expired");
-    const userId = userRes.data.user.id;
+    const userId = context.userId;
 
     const existing = await supabaseAdmin
       .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
