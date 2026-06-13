@@ -163,12 +163,12 @@ export const activateShredWallet = createServerFn({ method: "POST" })
     const { createShredWallet } = await import("@/lib/wallet.server");
     const userId = context.userId;
 
-    const existing = await supabaseAdmin
+    const existing = await context.supabase
       .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
     if (existing.data?.address) return { shred_wallet_address: existing.data.address as string };
 
     const w = createShredWallet();
-    const ins = await supabaseAdmin.from("user_wallets").insert({
+    const ins = await context.supabase.from("user_wallets").insert({
       user_id: userId,
       address: w.address,
       encrypted_private_key: w.encrypted_private_key,
