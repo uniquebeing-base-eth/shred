@@ -113,12 +113,54 @@ export function ShredApp() {
   const [openingResult, setOpeningResult] = useState<OpeningResult | null>(null);
   const [revealCount, setRevealCount] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [muted, setMutedState] = useState(false);
 
   const openPack = useServerFn(openShredPack);
 
   useEffect(() => {
     setMutedState(isMuted());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const current = data.session?.user;
+        if (!current) return;
+
+        const [{ data: profile }, { data: wallet }] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("username, display_name, minipay_address")
+            .eq("id", current.id)
+            .maybeSingle(),
+          supabase
+            .from("user_wallets")
+            .select("address")
+            .eq("user_id", current.id)
+            .maybeSingle(),
+        ]);
+
+        if (cancelled) return;
+        setSession({
+          username: profile?.username ?? profile?.display_name ?? current.user_metadata?.display_name ?? "player",
+          minipay_address: profile?.minipay_address ?? current.user_metadata?.minipay_address ?? "",
+          shred_wallet_address: wallet?.address ?? null,
+        });
+      } catch (e) {
+        console.error("Session restore failed", e);
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    }
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const currentPack = useMemo(
@@ -180,7 +222,15 @@ export function ShredApp() {
           {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
         </button>
 
-        {!session ? (
+        {authLoading ? (
+          <section className="welcome-panel">
+            <img src={shredLogo.url} alt="Shred logo" className="welcome-logo" />
+            <div className="welcome-copy">
+              <h1>Loading Shred</h1>
+              <p>Restoring your account…</p>
+            </div>
+          </section>
+        ) : !session ? (
           <WelcomeScreen onEntered={setSession} />
         ) : (
           <>
