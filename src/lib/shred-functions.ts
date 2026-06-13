@@ -99,12 +99,13 @@ export const enterShred = createServerFn({ method: "POST" })
 
     const taken = await supabaseAdmin
       .from("profiles")
-      .select("id")
+      .select("id, minipay_address")
       .eq("username", username)
-      .neq("minipay_address", addr)
       .maybeSingle();
     if (taken.error) throw new Error(`Username check failed: ${taken.error.message}`);
-    if (taken.data) throw new Error("That username is already registered in Shred.");
+    if (taken.data && String(taken.data.minipay_address ?? "").toLowerCase() !== addr) {
+      throw new Error("That username is already registered in Shred.");
+    }
 
     let session = await supabaseAdmin.auth.signInWithPassword({ email, password });
 
