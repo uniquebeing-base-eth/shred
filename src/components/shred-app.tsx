@@ -30,7 +30,7 @@ import {
 } from "@/lib/celo";
 import { quoteSwap, TOKENS, type TokenKey, type SwapQuote } from "@/lib/ubeswap";
 import { supabase } from "@/integrations/supabase/client";
-import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import { readWalletBalances, type WalletBalances } from "@/lib/balances";
 import type { Address } from "viem";
 
 type PackKey = PackOption["key"];
@@ -242,18 +242,16 @@ export function ShredApp() {
                   <img src={shredLogo.url} alt="Shred player avatar" className="avatar-logo" />
                 </div>
                 <div>
-                  <p className="level-badge">Level 12</p>
-                  <h2>{session.username}</h2>
-                  <div className="xp-meter">
-                    <span className="xp-fill" style={{ width: "82%" }} />
-                    <strong>2,450 / 3,000 XP</strong>
-                  </div>
+                  <p className="level-badge">@{session.username}</p>
+                  <h2>{session.shred_wallet_address
+                    ? `${session.shred_wallet_address.slice(0, 6)}…${session.shred_wallet_address.slice(-4)}`
+                    : "Wallet not activated"}</h2>
+                  <p className="level-badge" style={{ opacity: 0.7 }}>
+                    MiniPay {session.minipay_address ? `${session.minipay_address.slice(0, 6)}…${session.minipay_address.slice(-4)}` : "—"}
+                  </p>
                 </div>
               </div>
-              <div className="currency-stack">
-                <StatPill tone="gold" icon="◎" value="4,350" />
-                <StatPill tone="violet" icon="◈" value="120" />
-              </div>
+              <WalletBalancePills address={session.shred_wallet_address} />
             </header>
 
             <section className="content-area">
@@ -411,10 +409,7 @@ function ClaimUsernameModal({ onEntered, onClose }: { onEntered: (s: Session) =>
     setError(null);
     try {
       if (!getInjectedProvider()) {
-        // Preview/browser fallback: create a local burner so signup still works.
-        const burner = privateKeyToAccount(generatePrivateKey()).address;
-        setAddress(burner);
-        setStage("name");
+        setError("No wallet detected. Open Shred inside MiniPay or another Celo wallet to continue.");
         return;
       }
       const addr = await connectWallet();
