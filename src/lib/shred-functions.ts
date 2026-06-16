@@ -211,20 +211,16 @@ export const activateShredWallet = createServerFn({ method: "POST" })
  * Requires the wallet to hold the input token + a small CELO balance for gas.
  */
 export const executeShredSwap = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((data) => swapInput.parse(data))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { decryptPrivateKey } = await import("@/lib/wallet.server");
     const { createWalletClient, createPublicClient, http, parseUnits, encodeFunctionData, getAddress } = await import("viem");
     const { privateKeyToAccount } = await import("viem/accounts");
     const { celo } = await import("viem/chains");
-    const { getRequestHeader } = await import("@tanstack/react-start/server");
 
-    const token = getRequestHeader("authorization")?.replace(/^Bearer\s+/i, "");
-    if (!token) throw new Error("Not signed in");
-    const userRes = await supabaseAdmin.auth.getUser(token);
-    if (userRes.error || !userRes.data.user) throw new Error("Session expired");
-    const userId = userRes.data.user.id;
+    const userId = context.userId;
 
     const w = await supabaseAdmin
       .from("user_wallets")
