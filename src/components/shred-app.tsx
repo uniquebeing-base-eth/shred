@@ -41,7 +41,9 @@ type OpeningResult = {
   title: string;
   rewards: readonly OpeningReward[];
   claimReady: boolean;
-  claimedAt: null;
+  claimedAt: string | null;
+  txHash?: string;
+  player?: string;
 };
 type Session = {
   username: string;
