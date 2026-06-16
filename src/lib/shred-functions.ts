@@ -83,6 +83,7 @@ const rewardSets = {
 } as const;
 
 export const openShredPack = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((data) => openPackInput.parse(data))
   .handler(async ({ data }) => {
     const result = rewardSets[data.packKey];
