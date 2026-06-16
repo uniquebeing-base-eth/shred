@@ -18,12 +18,29 @@ const enterInput = z.object({
   previewMode: z.boolean().optional(),
 });
 
+const ALLOWED_TOKEN_ADDRESSES = new Set(
+  [
+    "0x471EcE3750Da237f93B8E339c536989b8978a438", // CELO
+    "0x765DE816845861e75A25fCA122bb6898B8B1282a", // cUSD
+    "0xD8763CBa276a3738E6DE85b4b3bF5FDed6D6cA73", // cEUR
+    "0x71e26d0E519D14591b9dE9a0fE9513A398101490", // UBE
+  ].map((a) => a.toLowerCase()),
+);
+
 const swapInput = z.object({
   fromSymbol: z.enum(["CELO", "cUSD", "cEUR", "UBE"]),
   toSymbol: z.enum(["CELO", "cUSD", "cEUR", "UBE"]),
   amountIn: z.string().min(1),
   minAmountOut: z.string().min(1),
-  path: z.array(z.string()).min(2),
+  path: z
+    .array(
+      z.string().refine(
+        (a) => ALLOWED_TOKEN_ADDRESSES.has(a.toLowerCase()),
+        { message: "Unknown token address in swap path" },
+      ),
+    )
+    .min(2)
+    .max(4),
 });
 
 const rewardSets = {
@@ -66,6 +83,7 @@ const rewardSets = {
 } as const;
 
 export const openShredPack = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((data) => openPackInput.parse(data))
   .handler(async ({ data }) => {
     const result = rewardSets[data.packKey];
@@ -193,20 +211,16 @@ export const activateShredWallet = createServerFn({ method: "POST" })
  * Requires the wallet to hold the input token + a small CELO balance for gas.
  */
 export const executeShredSwap = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((data) => swapInput.parse(data))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { decryptPrivateKey } = await import("@/lib/wallet.server");
     const { createWalletClient, createPublicClient, http, parseUnits, encodeFunctionData, getAddress } = await import("viem");
     const { privateKeyToAccount } = await import("viem/accounts");
     const { celo } = await import("viem/chains");
-    const { getRequestHeader } = await import("@tanstack/react-start/server");
 
-    const token = getRequestHeader("authorization")?.replace(/^Bearer\s+/i, "");
-    if (!token) throw new Error("Not signed in");
-    const userRes = await supabaseAdmin.auth.getUser(token);
-    if (userRes.error || !userRes.data.user) throw new Error("Session expired");
-    const userId = userRes.data.user.id;
+    const userId = context.userId;
 
     const w = await supabaseAdmin
       .from("user_wallets")
