@@ -751,7 +751,7 @@ function ClaimedScene({ result, onClose }: { result: OpeningResult; onClose: () 
         animate={{ rotate: [0, -6, 6, 0], scale: [1, 1.05, 1] }}
         transition={{ duration: 1.4, repeat: Infinity }}
       />
-      <p>Added to your collection. Cash out anytime from the Swap tab.</p>
+      <p>Rewards sent to your Shred wallet on Celo.</p>
       <div className="claim-summary">
         {result.rewards.map((reward) => (
           <div key={reward.label} className="claim-row">
@@ -759,6 +759,14 @@ function ClaimedScene({ result, onClose }: { result: OpeningResult; onClose: () 
             <strong>{reward.value}</strong>
           </div>
         ))}
+        {result.txHash ? (
+          <div className="claim-row">
+            <span>Tx</span>
+            <a href={`https://celoscan.io/tx/${result.txHash}`} target="_blank" rel="noreferrer">
+              <strong>{result.txHash.slice(0, 10)}…</strong>
+            </a>
+          </div>
+        ) : null}
       </div>
       <Button variant="arcade" size="arcade" onClick={onClose}>View Collection</Button>
     </div>
@@ -1167,6 +1175,32 @@ function StatPill({ tone, icon, value }: { tone: "gold" | "violet"; icon: string
     <div className={cn("stat-pill", tone === "gold" ? "stat-pill-gold" : "stat-pill-violet")}>
       <span>{icon}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function WalletBalancePills({ address }: { address: string | null }) {
+  const [bal, setBal] = useState<WalletBalances | null>(null);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    setErr(false);
+    readWalletBalances(address as Address)
+      .then((b) => { if (!cancelled) setBal(b); })
+      .catch(() => { if (!cancelled) setErr(true); });
+    const t = window.setInterval(() => {
+      readWalletBalances(address as Address)
+        .then((b) => { if (!cancelled) setBal(b); })
+        .catch(() => {});
+    }, 20000);
+    return () => { cancelled = true; window.clearInterval(t); };
+  }, [address]);
+  if (!address) return null;
+  return (
+    <div className="currency-stack">
+      <StatPill tone="gold" icon="◎" value={bal ? bal.celo : err ? "—" : "…"} />
+      <StatPill tone="violet" icon="$" value={bal ? bal.cusd : err ? "—" : "…"} />
     </div>
   );
 }
