@@ -43,58 +43,94 @@ const swapInput = z.object({
     .max(4),
 });
 
-const rewardSets = {
-  starter: {
-    title: "You Discovered!",
-    rewards: [
-      { label: "CELO", value: "+0.05", accent: "gold" as const },
-      { label: "MENTO", value: "+100", accent: "green" as const },
-      { label: "Common MENTO Card", value: "NEW", accent: "violet" as const },
-      { label: "Points", value: "+150", accent: "gold" as const },
-    ],
-  },
-  mystery: {
-    title: "Rare Pull!",
-    rewards: [
-      { label: "CELO", value: "+0.08", accent: "gold" as const },
-      { label: "UBE", value: "+60", accent: "violet" as const },
-      { label: "Rare UBE Card", value: "NEW", accent: "cyan" as const },
-      { label: "Points", value: "+240", accent: "gold" as const },
-    ],
-  },
-  alpha: {
-    title: "Alpha Rewards!",
-    rewards: [
-      { label: "CELO", value: "+0.12", accent: "gold" as const },
-      { label: "GOOD", value: "+420", accent: "cyan" as const },
-      { label: "Epic GOOD Card", value: "NEW", accent: "violet" as const },
-      { label: "Points", value: "+420", accent: "gold" as const },
-    ],
-  },
-  legendary: {
-    title: "Legendary Pull!",
-    rewards: [
-      { label: "CELO", value: "+0.20", accent: "gold" as const },
-      { label: "MENTO", value: "+500", accent: "green" as const },
-      { label: "Legendary MENTO Card", value: "NEW", accent: "gold" as const },
-      { label: "Points", value: "+900", accent: "gold" as const },
-    ],
-  },
-} as const;
-
+/**
+ * Opens a pack by distributing real on-chain rewards from the deployed
+ * ShredRewards contract. The backend signer (BACKEND_SIGNER_PRIVATE_KEY)
+ * is an authorized rewarder on the contract and signs distribute().
+ * Replay protection: claimId is derived from userId + packKey + day bucket
+ * for starter (daily free), and userId + packKey + timestamp for paid packs.
+ */
 export const openShredPack = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data) => openPackInput.parse(data))
-  .handler(async ({ data }) => {
-    const result = rewardSets[data.packKey];
+  .handler(async ({ data, context }) => {
+    const { PACK_REWARDS, SHRED_REWARDS_CONTRACT, shredRewardsAbi, CELO_TOKEN } = await import("@/lib/contracts");
+    const { createWalletClient, createPublicClient, http, parseEther, parseUnits, keccak256, encodePacked } = await import("viem");
+    const { privateKeyToAccount } = await import("viem/accounts");
+    const { celo } = await import("viem/chains");
+
+    const userId = context.userId;
+    const pk = process.env.BACKEND_SIGNER_PRIVATE_KEY;
+    if (!pk) throw new Error("Rewards distributor is not configured (BACKEND_SIGNER_PRIVATE_KEY missing).");
+
+    const w = await context.supabase
+      .from("user_wallets").select("address").eq("user_id", userId).maybeSingle();
+    if (!w.data?.address) throw new Error("Activate your Shred wallet first to receive rewards.");
+    const player = w.data.address as `0x${string}`;
+
+    const bundle = PACK_REWARDS[data.packKey];
+
+    const dayBucket = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+    const nonce = data.packKey === "starter"
+      ? `${userId}:starter:${dayBucket}`
+      : `${userId}:${data.packKey}:${Date.now()}`;
+    const claimId = keccak256(encodePacked(["string"], [nonce]));
+
+    const signerKey = (pk.startsWith("0x") ? pk : `0x${pk}`) as `0x${string}`;
+    const signer = privateKeyToAccount(signerKey);
+    const pub = createPublicClient({ chain: celo, transport: http() });
+    const wallet = createWalletClient({ chain: celo, transport: http(), account: signer });
+
+    const already = await pub.readContract({
+      address: SHRED_REWARDS_CONTRACT,
+      abi: shredRewardsAbi,
+      functionName: "claimed",
+      args: [claimId],
+    });
+    if (already) {
+      throw new Error(data.packKey === "starter"
+        ? "Daily starter pack already claimed. Come back tomorrow!"
+        : "This claim has already been processed.");
+    }
+
+    const celoAmount = bundle.celo === "0" ? 0n : parseEther(bundle.celo);
+    const tokens = bundle.tokens.map((t) => t.address);
+    const amounts = bundle.tokens.map((t) => parseUnits(t.amount, t.decimals));
+
+    const txHash = await wallet.writeContract({
+      address: SHRED_REWARDS_CONTRACT,
+      abi: shredRewardsAbi,
+      functionName: "distribute",
+      args: [claimId, player, bundle.packId, celoAmount, tokens, amounts],
+    });
+    const rcpt = await pub.waitForTransactionReceipt({ hash: txHash });
+    if (rcpt.status !== "success") throw new Error(`Reward distribution failed (tx ${txHash}).`);
+
+    const rewards = [
+      ...(celoAmount > 0n ? [{ label: "CELO", value: `+${bundle.celo}`, accent: "gold" as const }] : []),
+      ...bundle.tokens.map((t) => ({
+        label: t.address.toLowerCase() === CELO_TOKEN.toLowerCase() ? "CELO" : "cUSD",
+        value: `+${t.amount}`,
+        accent: "green" as const,
+      })),
+    ];
+
+    const title = data.packKey === "legendary" ? "Legendary Pull!"
+      : data.packKey === "alpha" ? "Alpha Rewards!"
+      : data.packKey === "mystery" ? "Rare Pull!"
+      : "You Discovered!";
+
     return {
       packKey: data.packKey,
-      title: result.title,
-      rewards: result.rewards,
+      title,
+      rewards,
+      txHash,
+      player,
       claimReady: true,
-      claimedAt: null as null,
+      claimedAt: new Date().toISOString(),
     };
   });
+
 
 /**
  * Sign-in entry point after the player claims a username.
