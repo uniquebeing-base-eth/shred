@@ -5,17 +5,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow hover:brightness-105",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:brightness-105",
+        default:
+          "bg-primary text-primary-foreground shadow hover:brightness-105",
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-sm hover:brightness-105",
         outline:
           "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground shadow-sm hover:brightness-105",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        secondary:
+          "bg-secondary text-secondary-foreground shadow-sm hover:brightness-105",
+        ghost:
+          "hover:bg-accent hover:text-accent-foreground",
+        link:
+          "text-primary underline-offset-4 hover:underline",
         arcade:
           "border-2 border-border bg-primary text-primary-foreground shadow-[0_6px_0_color-mix(in_oklab,var(--background)_35%,transparent)] hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0.5 active:shadow-[0_3px_0_color-mix(in_oklab,var(--background)_35%,transparent)]",
         gold:
@@ -26,8 +31,8 @@ const buttonVariants = cva(
         sm: "h-8 rounded-md px-3 text-xs",
         lg: "h-10 rounded-md px-8",
         icon: "h-9 w-9",
-        arcade: "h-13 px-6 text-lg font-extrabold uppercase",
-        arcadeSm: "h-11 px-5 text-base font-extrabold uppercase",
+        arcade: "h-13 px-6 text-lg font-extrabold uppercase tracking-wide",
+        arcadeSm: "h-11 px-5 text-base font-extrabold uppercase tracking-wide",
       },
     },
     defaultVariants: {
@@ -38,18 +43,36 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      type,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : "button";
+
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      <Comp
+        ref={ref}
+        className={cn(buttonVariants({ variant, size }), className)}
+        type={!asChild ? type ?? "button" : undefined}
+        {...props}
+      />
     );
   },
 );
+
 Button.displayName = "Button";
 
 export { Button, buttonVariants };
